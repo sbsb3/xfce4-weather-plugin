@@ -21,6 +21,8 @@
 #include <time.h>
 
 #include <glib.h>
+#include <gdk/gdk.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
@@ -581,7 +583,10 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
     loci = interval->location;
 
     loci->symbol_id = symbol_id;
-    loci->symbol    = g_strdup(get_symbol_name(symbol_id));
+    /* Encode EC icon code in symbol string so callers can load EC PNG directly */
+    loci->symbol    = (icon_code >= 0)
+        ? g_strdup_printf("EC:%02d", icon_code)
+        : g_strdup(get_symbol_name(symbol_id));
     loci->precipitation_value = g_strdup("0.0");
     loci->precipitation_unit  = g_strdup("mm");
 
@@ -784,7 +789,7 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                 loci = iv->location;
 
                 loci->symbol_id = sym_id;
-                loci->symbol    = g_strdup(get_symbol_name(sym_id));
+                loci->symbol    = g_strdup_printf("EC:%02d", h_icon);
                 if (h_pop > 0)
                     loci->precipitation_value = g_strdup_printf("%.1f",
                                                                  h_pop * 0.1);
@@ -927,7 +932,7 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                     iv->point = fc_point;
                     xml_location *loci = iv->location;
                     loci->symbol_id = sym_id;
-                    loci->symbol    = g_strdup(get_symbol_name(sym_id));
+                    loci->symbol    = g_strdup_printf("EC:%02d", fc_icon);
                     loci->precipitation_value = g_strdup("0.0");
                     loci->precipitation_unit  = g_strdup("mm");
                     merge_timeslice(wd, iv);
@@ -1177,4 +1182,33 @@ ec_parse_aqhi_observation(const gchar *xml_data, gsize len)
 
     xmlFreeDoc(doc);
     return result;
+}
+
+
+/*
+ * Load an EC icon PNG by icon code from the installed ec-icons directory.
+ * Returns a cairo_surface_t scaled to (size * scale) px, or NULL on failure.
+ */
+cairo_surface_t *
+ec_get_icon(gint icon_code, gint size, gint scale)
+{
+    gchar           *path;
+    GdkPixbuf       *pb;
+    cairo_surface_t *surface;
+    gint             px;
+
+    if (icon_code < 0)
+        return NULL;
+
+    px   = size * scale;
+    path = g_strdup_printf(PACKAGE_DATADIR "/ec-icons/%02d.png", icon_code);
+    pb   = gdk_pixbuf_new_from_file_at_scale(path, px, px, TRUE, NULL);
+    g_free(path);
+
+    if (!pb)
+        return NULL;
+
+    surface = gdk_cairo_surface_create_from_pixbuf(pb, scale, NULL);
+    g_object_unref(pb);
+    return surface;
 }

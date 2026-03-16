@@ -342,7 +342,14 @@ update_icon(plugin_data *data)
     str = get_data(conditions, data->units, SYMBOL,
                    data->round, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
-    icon = get_icon(data->icon_theme, str, size, scale_factor, data->night_time);
+
+    /* Use native EC icons when available (symbol encoded as "EC:NN") */
+    if (str && g_str_has_prefix(str, "EC:")) {
+        gint code = atoi(str + 3);
+        icon = ec_get_icon(code, size, scale_factor);
+    } else {
+        icon = get_icon(data->icon_theme, str, size, scale_factor, data->night_time);
+    }
     gtk_image_set_from_surface(GTK_IMAGE(data->iconimage), icon);
     if (G_LIKELY(icon))
         cairo_surface_destroy(icon);
@@ -351,7 +358,13 @@ update_icon(plugin_data *data)
     size = get_tooltip_icon_size(data);
     if (G_LIKELY(data->tooltip_icon))
         cairo_surface_destroy(data->tooltip_icon);
-    data->tooltip_icon = get_icon(data->icon_theme, str, size, scale_factor, data->night_time);
+    if (str && g_str_has_prefix(str, "EC:")) {
+        gint code = atoi(str + 3);
+        data->tooltip_icon = ec_get_icon(code, size, scale_factor);
+    } else {
+        data->tooltip_icon = get_icon(data->icon_theme, str, size, scale_factor,
+                                      data->night_time);
+    }
     g_free(str);
     weather_debug("Updated panel and tooltip icons.");
 }

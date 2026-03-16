@@ -961,7 +961,11 @@ add_forecast_cell(plugin_data *data,
     rawvalue = get_data(fcdata, data->units, SYMBOL,
                         FALSE, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
-    icon = get_icon(data->icon_theme, rawvalue, 48, scale_factor, (time_of_day == NIGHT));
+    if (rawvalue && g_str_has_prefix(rawvalue, "EC:"))
+        icon = ec_get_icon(atoi(rawvalue + 3), 48, scale_factor);
+    else
+        icon = get_icon(data->icon_theme, rawvalue, 48, scale_factor,
+                        (time_of_day == NIGHT));
     g_free(rawvalue);
     image = gtk_image_new_from_surface(icon);
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(image), TRUE, TRUE, 0);

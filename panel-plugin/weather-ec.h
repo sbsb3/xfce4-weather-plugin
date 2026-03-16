@@ -20,6 +20,7 @@
 #define __WEATHER_EC_H__
 
 #include <glib.h>
+#include <cairo/cairo.h>
 #include "weather-parsers.h"
 
 G_BEGIN_DECLS
@@ -70,6 +71,10 @@ ec_aqhi_region *ec_find_nearest_aqhi_region (const gchar *xml_data, gsize len,
                                               gdouble lat, gdouble lon);
 void       ec_aqhi_region_free         (ec_aqhi_region *region);
 gdouble    ec_parse_aqhi_observation   (const gchar *xml_data, gsize len);
+
+/* Load an EC icon by code from the installed ec-icons directory.
+ * Returns a cairo_surface_t* or NULL. Caller owns the surface. */
+cairo_surface_t *ec_get_icon          (gint icon_code, gint size, gint scale);
 
 G_END_DECLS
 
