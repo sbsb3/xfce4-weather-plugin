@@ -368,8 +368,14 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
                 continue;
 
             if (xmlStrcmp(child->name, (const xmlChar *) "dateTime") == 0) {
-                xmlChar *zone = xmlGetProp(child, (const xmlChar *) "name");
-                if (zone && xmlStrcmp(zone, (const xmlChar *) "observation") == 0) {
+                /* EC XML has two dateTime[@name="observation"] elements:
+                 * one with zone="UTC" and one with a local-time zone.
+                 * We must use only the UTC one; parsing local time as
+                 * UTC would produce an obs_time that is hours off. */
+                xmlChar *nm   = xmlGetProp(child, (const xmlChar *) "name");
+                xmlChar *zone = xmlGetProp(child, (const xmlChar *) "zone");
+                if (nm && xmlStrcmp(nm, (const xmlChar *) "observation") == 0 &&
+                    zone && xmlStrcmp(zone, (const xmlChar *) "UTC") == 0) {
                     xmlNode *ts_node;
                     for (ts_node = child->children; ts_node; ts_node = ts_node->next) {
                         if (ts_node->type == XML_ELEMENT_NODE &&
@@ -384,6 +390,7 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
                         }
                     }
                 }
+                xmlFree(nm);
                 xmlFree(zone);
             } else if (xmlStrcmp(child->name, (const xmlChar *) "temperature") == 0) {
                 content = xmlNodeGetContent(child);
