@@ -576,6 +576,12 @@ cb_data_source_changed(GtkWidget *combo,
         dialog->pd->ec_province = NULL;
         g_free(dialog->pd->ec_station_id);
         dialog->pd->ec_station_id = NULL;
+        /* clear all cached weather data so stale data from the old source
+         * does not persist while the new source is loading */
+        if (dialog->pd->weatherdata) {
+            xml_weather_free(dialog->pd->weatherdata);
+            dialog->pd->weatherdata = make_weather_data();
+        }
         schedule_delayed_data_update(dialog);
     }
 }

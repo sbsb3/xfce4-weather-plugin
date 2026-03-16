@@ -870,6 +870,10 @@ cb_ec_weather_xml(SoupSession *session,
             len = msg->response_body->length;
         }
 #endif
+        /* clear any old (e.g. met.no) data before merging EC data */
+        xml_weather_free(pdata->weatherdata);
+        pdata->weatherdata = make_weather_data();
+
         if (ec_parse_weather(body, len, pdata->weatherdata)) {
             pdata->weather_update->attempt = 0;
             pdata->weather_update->last = now_t;
@@ -1451,6 +1455,20 @@ update_handler(gpointer user_data)
         }
     }
 
+    /* fetch WAQI air quality index if API key is configured */
+    if (data->waqi_api_key && data->waqi_api_key[0] != '\0' &&
+        difftime(data->waqi_update->next, now_t) <= 0) {
+        data->waqi_update->next = time_calc_hour(now_tm, 1);
+        ec_start_waqi_update(data);
+    }
+
+    /* fetch EC AQHI (free, no key required) if using EC data source */
+    if (data->data_source == DATASOURCE_ENVCANADA &&
+        difftime(data->aqhi_update->next, now_t) <= 0) {
+        data->aqhi_update->next = time_calc_hour(now_tm, 1);
+        ec_start_aqhi_update(data);
+    }
+
     /* fetch weather data */
     if (difftime(data->weather_update->next, now_t) <= 0) {
         /* real next update time will be calculated when update is finished,
@@ -1479,20 +1497,6 @@ update_handler(gpointer user_data)
         /* cb_weather_update will deal with everything that follows this
          * block, so let's return instead of doing things twice */
         return FALSE;
-    }
-
-    /* fetch WAQI air quality index if API key is configured */
-    if (data->waqi_api_key && data->waqi_api_key[0] != '\0' &&
-        difftime(data->waqi_update->next, now_t) <= 0) {
-        data->waqi_update->next = time_calc_hour(now_tm, 1);
-        ec_start_waqi_update(data);
-    }
-
-    /* fetch EC AQHI (free, no key required) if using EC data source */
-    if (data->data_source == DATASOURCE_ENVCANADA &&
-        difftime(data->aqhi_update->next, now_t) <= 0) {
-        data->aqhi_update->next = time_calc_hour(now_tm, 1);
-        ec_start_aqhi_update(data);
     }
 
     /* update current conditions, icon and labels */
