@@ -1060,7 +1060,12 @@ find_smallest_interval(xml_weather *wd,
     if (before->len == 0)
         return NULL;
 
-    for (i = before->len - 1; i > 0; i--) {
+    /* Iterate from the most recent before-point down to index 0.
+     * Use the "i-- > 0 after decrement" pattern to safely handle
+     * guint underflow when before->len == 1 (single observed point,
+     * as is typical for Environment Canada data). */
+    i = before->len;
+    while (i-- > 0) {
         ts_before = g_array_index(before, xml_time *, i);
         for (j = 0; j < after->len; j++) {
             ts_after = g_array_index(after, xml_time *, j);
