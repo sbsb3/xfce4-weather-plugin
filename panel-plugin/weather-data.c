@@ -479,6 +479,11 @@ get_data(const xml_time *timeslice,
 
     case SYMBOL:
         return CHK_NULL(loc->symbol);
+
+    case AQI:
+    case AQHI:
+        /* Not timeslice-based; handled directly in make_label() */
+        return g_strdup("");
     }
 
     return g_strdup("");
@@ -545,6 +550,8 @@ get_unit(const units_config *units,
     case SYMBOL:
     case WIND_BEAUFORT:
     case WIND_DIRECTION:
+    case AQI:
+    case AQHI:
         return "";
     }
     return "";

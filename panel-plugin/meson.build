@@ -5,6 +5,8 @@ plugin_sources = [
   'weather-data.h',
   'weather-debug.c',
   'weather-debug.h',
+  'weather-ec.c',
+  'weather-ec.h',
   'weather-icon.c',
   'weather-icon.h',
   'weather-parsers.c',

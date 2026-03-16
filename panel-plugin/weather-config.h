@@ -40,6 +40,8 @@ typedef struct {
     GtkWidget *spin_alt;
     GtkWidget *label_alt_unit;
     GtkWidget *text_timezone;
+    GtkWidget *combo_data_source;
+    GtkWidget *text_waqi_key;
     GtkWidget *update_spinner;
 
     /* units page */

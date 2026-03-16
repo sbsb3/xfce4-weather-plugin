@@ -43,6 +43,7 @@
 #include "weather-icon.h"
 #include "weather-scrollbox.h"
 #include "weather-debug.h"
+#include "weather-ec.h"
 
 #define XFCEWEATHER_ROOT "weather"
 #define CACHE_FILE_MAX_AGE (48 * 3600)
@@ -101,6 +102,18 @@ gboolean debug_mode = FALSE;
 static void write_cache_file(plugin_data *data);
 
 static void schedule_next_wakeup(plugin_data *data);
+
+static void ec_start_weather_update(plugin_data *data);
+static void ec_start_waqi_update(plugin_data *data);
+static void ec_start_aqhi_update(plugin_data *data);
+
+
+typedef struct {
+    plugin_data *data;
+    gchar       *province;
+    gchar       *station_id;
+    gint         hours_tried;
+} ec_dir_ctx;
 
 
 void
@@ -180,6 +193,24 @@ make_label(const plugin_data *data,
     case PRECIPITATION:
         lbl = _("R");
         break;
+    case AQI:
+        lbl = _("AQI");
+        if (data->aqi_value >= 0) {
+            if (data->labels->len > 1)
+                return g_strdup_printf("AQI: %d", data->aqi_value);
+            else
+                return g_strdup_printf("%d", data->aqi_value);
+        }
+        return g_strdup("AQI: --");
+    case AQHI:
+        lbl = _("AQHI");
+        if (data->aqhi_value >= 0) {
+            if (data->labels->len > 1)
+                return g_strdup_printf("AQHI: %.0f", data->aqhi_value);
+            else
+                return g_strdup_printf("%.0f", data->aqhi_value);
+        }
+        return g_strdup("AQHI: --");
     default:
         lbl = "?";
         break;
@@ -224,10 +255,19 @@ init_update_infos(plugin_data *data)
         g_slice_free(update_info, data->weather_update);
     if (G_LIKELY(data->conditions_update))
         g_slice_free(update_info, data->conditions_update);
+    if (G_LIKELY(data->waqi_update))
+        g_slice_free(update_info, data->waqi_update);
+    if (G_LIKELY(data->aqhi_update))
+        g_slice_free(update_info, data->aqhi_update);
 
     data->astro_update = make_update_info(24 * 3600);
     data->weather_update = make_update_info(60 * 60);
     data->conditions_update = make_update_info(5 * 60);
+    data->waqi_update = make_update_info(30 * 60);
+    data->aqhi_update = make_update_info(30 * 60);
+
+    data->aqi_value  = -1;
+    data->aqhi_value = -1.0;
 }
 
 
@@ -758,6 +798,544 @@ cb_weather_update(SoupSession *session,
 }
 
 
+static void
+ec_dir_ctx_free(ec_dir_ctx *ctx)
+{
+    if (!ctx)
+        return;
+    g_free(ctx->province);
+    g_free(ctx->station_id);
+    g_slice_free(ec_dir_ctx, ctx);
+}
+
+
+static void
+ec_fetch_directory(plugin_data *data, const gchar *province,
+                   const gchar *station_id, gint hours_tried);
+
+
+/*
+ * Process downloaded EC weather XML data.
+ */
+static void
+#if SOUP_CHECK_VERSION(3, 0, 0)
+cb_ec_weather_xml(GObject *source,
+                  GAsyncResult *result,
+#else
+cb_ec_weather_xml(SoupSession *session,
+                  SoupMessage *msg,
+#endif
+                  gpointer user_data)
+{
+    plugin_data *pdata = (plugin_data *) user_data;
+    time_t now_t;
+    gboolean parsing_error = TRUE;
+    const gchar *body = NULL;
+    gsize len = 0;
+#if SOUP_CHECK_VERSION(3, 0, 0)
+    SoupMessage *msg;
+    GError *error = NULL;
+    GBytes *response = NULL;
+
+    weather_debug("Processing downloaded EC weather XML.");
+    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
+                                                 result, &error);
+    msg = soup_session_get_async_result_message(SOUP_SESSION(source), result);
+    time(&now_t);
+    pdata->weather_update->attempt++;
+    pdata->weather_update->http_status_code = soup_message_get_status(msg);
+    if (G_LIKELY(error == NULL)) {
+        body = g_bytes_get_data(response, &len);
+#else
+    weather_debug("Processing downloaded EC weather XML.");
+    time(&now_t);
+    pdata->weather_update->attempt++;
+    pdata->weather_update->http_status_code = msg->status_code;
+    if (msg->status_code == 200 || msg->status_code == 203) {
+        if (G_LIKELY(msg->response_body && msg->response_body->data)) {
+            body = msg->response_body->data;
+            len = msg->response_body->length;
+        }
+#endif
+        if (ec_parse_weather(body, len, pdata->weatherdata)) {
+            pdata->weather_update->attempt = 0;
+            pdata->weather_update->last = now_t;
+            parsing_error = FALSE;
+
+            /* Also parse hourly/daily forecasts */
+            ec_parse_forecasts(body, len, pdata->weatherdata,
+                               pdata->weather_update->last);
+
+            /* Parse alerts and replace any previous ones */
+            if (pdata->ec_alerts) {
+                g_ptr_array_unref(pdata->ec_alerts);
+                pdata->ec_alerts = NULL;
+            }
+            pdata->ec_alerts = ec_parse_alerts(body, len);
+        }
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        g_bytes_unref(response);
+#endif
+        if (parsing_error)
+            g_warning("Error parsing EC weather XML!");
+    } else {
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        weather_debug("Download of EC weather XML failed: %s", error->message);
+        g_error_free(error);
+#else
+        weather_debug("Download of EC weather XML failed with HTTP Status Code %d, "
+                      "Reason phrase: %s", msg->status_code, msg->reason_phrase);
+#endif
+    }
+
+    if (parsing_error)
+        pdata->weather_update->next = now_t + 10 * 60;
+    else
+        pdata->weather_update->next = now_t + 60 * 60;
+
+    xml_weather_clean(pdata->weatherdata);
+    g_array_sort(pdata->weatherdata->timeslices,
+                 (GCompareFunc) xml_time_compare);
+    weather_debug("EC: Updating current conditions.");
+    update_current_conditions(pdata, !parsing_error);
+    gtk_scrollbox_reset(GTK_SCROLLBOX(pdata->scrollbox));
+
+    pdata->weather_update->finished = TRUE;
+}
+
+
+/*
+ * Process downloaded EC directory listing HTML to find the weather XML URL.
+ */
+static void
+#if SOUP_CHECK_VERSION(3, 0, 0)
+cb_ec_dirlist(GObject *source,
+              GAsyncResult *result,
+#else
+cb_ec_dirlist(SoupSession *session,
+              SoupMessage *msg,
+#endif
+              gpointer user_data)
+{
+    ec_dir_ctx *ctx = (ec_dir_ctx *) user_data;
+    plugin_data *data = ctx->data;
+    const gchar *body = NULL;
+    gsize len = 0;
+    gchar *xml_url = NULL;
+    gchar *dir_url = NULL;
+    time_t check_t;
+    struct tm *utc_tm;
+    gint hour;
+#if SOUP_CHECK_VERSION(3, 0, 0)
+    GError *error = NULL;
+    GBytes *response = NULL;
+
+    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
+                                                 result, &error);
+    if (G_LIKELY(error == NULL)) {
+        body = g_bytes_get_data(response, &len);
+#else
+    if (msg->status_code == 200 || msg->status_code == 203) {
+        if (G_LIKELY(msg->response_body && msg->response_body->data)) {
+            body = msg->response_body->data;
+            len = msg->response_body->length;
+        }
+#endif
+        /* build dir_url for this attempt */
+        check_t = time(NULL) - ctx->hours_tried * 3600;
+        utc_tm = gmtime(&check_t);
+        hour = utc_tm->tm_hour;
+        dir_url = g_strdup_printf("%s%s/%02d/",
+                                  EC_WEATHER_BASE, ctx->province, hour);
+
+        xml_url = ec_find_xml_url_in_dirlist(body, dir_url, ctx->station_id);
+        g_free(dir_url);
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        g_bytes_unref(response);
+#endif
+    } else {
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        weather_debug("Download of EC directory listing failed: %s", error->message);
+        g_error_free(error);
+#else
+        weather_debug("Download of EC directory listing failed with HTTP Status Code %d, "
+                      "Reason phrase: %s", msg->status_code, msg->reason_phrase);
+#endif
+    }
+
+    if (xml_url) {
+        weather_debug("EC: found XML URL: %s", xml_url);
+        weather_http_queue_request(data->session, xml_url,
+                                   cb_ec_weather_xml, data);
+        g_free(xml_url);
+        ec_dir_ctx_free(ctx);
+        return;
+    }
+
+    /* try previous UTC hour */
+    ctx->hours_tried++;
+    if (ctx->hours_tried < EC_MAX_HOURS_BACK) {
+        weather_debug("EC: XML not found, trying previous hour (%d/%d).",
+                      ctx->hours_tried, EC_MAX_HOURS_BACK);
+        ec_fetch_directory(data, ctx->province, ctx->station_id,
+                           ctx->hours_tried);
+        ec_dir_ctx_free(ctx);
+        return;
+    }
+
+    g_warning("EC: Could not find weather XML for station %s after %d attempts.",
+              ctx->station_id, EC_MAX_HOURS_BACK);
+    data->weather_update->finished = TRUE;
+    ec_dir_ctx_free(ctx);
+}
+
+
+/*
+ * Process downloaded EC site list CSV to find the nearest station.
+ */
+static void
+#if SOUP_CHECK_VERSION(3, 0, 0)
+cb_ec_sitelist(GObject *source,
+               GAsyncResult *result,
+#else
+cb_ec_sitelist(SoupSession *session,
+               SoupMessage *msg,
+#endif
+               gpointer user_data)
+{
+    plugin_data *data = (plugin_data *) user_data;
+    const gchar *body = NULL;
+    gsize len = 0;
+    ec_station *station = NULL;
+    gdouble lat, lon;
+#if SOUP_CHECK_VERSION(3, 0, 0)
+    GError *error = NULL;
+    GBytes *response = NULL;
+
+    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
+                                                 result, &error);
+    if (G_LIKELY(error == NULL)) {
+        body = g_bytes_get_data(response, &len);
+#else
+    if (msg->status_code == 200 || msg->status_code == 203) {
+        if (G_LIKELY(msg->response_body && msg->response_body->data)) {
+            body = msg->response_body->data;
+            len = msg->response_body->length;
+        }
+#endif
+        lat = (data->lat) ? g_ascii_strtod(data->lat, NULL) : 0.0;
+        lon = (data->lon) ? g_ascii_strtod(data->lon, NULL) : 0.0;
+        station = ec_find_nearest_from_csv(body, len, lat, lon);
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        g_bytes_unref(response);
+#endif
+    } else {
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        weather_debug("Download of EC site list failed: %s", error->message);
+        g_error_free(error);
+#else
+        weather_debug("Download of EC site list failed with HTTP Status Code %d, "
+                      "Reason phrase: %s", msg->status_code, msg->reason_phrase);
+#endif
+    }
+
+    if (station) {
+        weather_debug("EC: Nearest station: %s (%s), province: %s",
+                      station->name, station->station_id, station->province);
+        g_free(data->ec_province);
+        data->ec_province = g_strdup(station->province);
+        g_free(data->ec_station_id);
+        data->ec_station_id = g_strdup(station->station_id);
+        ec_fetch_directory(data, data->ec_province, data->ec_station_id, 0);
+        ec_station_free(station);
+    } else {
+        g_warning("EC: Could not find nearest station from site list.");
+        data->weather_update->finished = TRUE;
+    }
+}
+
+
+static void
+ec_fetch_directory(plugin_data *data, const gchar *province,
+                   const gchar *station_id, gint hours_tried)
+{
+    ec_dir_ctx *ctx;
+    gchar *url;
+    time_t check_t;
+    struct tm *utc_tm;
+    gint hour;
+
+    check_t = time(NULL) - hours_tried * 3600;
+    utc_tm = gmtime(&check_t);
+    hour = utc_tm->tm_hour;
+
+    url = g_strdup_printf("%s%s/%02d/", EC_WEATHER_BASE, province, hour);
+
+    ctx = g_slice_new0(ec_dir_ctx);
+    ctx->data       = data;
+    ctx->province   = g_strdup(province);
+    ctx->station_id = g_strdup(station_id);
+    ctx->hours_tried = hours_tried;
+
+    weather_debug("EC: Fetching directory listing: %s", url);
+    weather_http_queue_request(data->session, url, cb_ec_dirlist, ctx);
+    g_free(url);
+}
+
+
+static void
+ec_start_weather_update(plugin_data *data)
+{
+    if (data->ec_province && data->ec_station_id) {
+        weather_debug("EC: Starting weather update for station %s (%s).",
+                      data->ec_station_id, data->ec_province);
+        ec_fetch_directory(data, data->ec_province, data->ec_station_id, 0);
+    } else {
+        weather_debug("EC: No station cached, fetching site list.");
+        weather_http_queue_request(data->session, EC_SITE_LIST_URL,
+                                   cb_ec_sitelist, data);
+    }
+}
+
+
+/* ─── WAQI (World Air Quality Index) ─── */
+
+static void
+#if SOUP_CHECK_VERSION(3, 0, 0)
+cb_waqi_update(GObject *source,
+               GAsyncResult *result,
+#else
+cb_waqi_update(SoupSession *session,
+               SoupMessage *msg,
+#endif
+               gpointer user_data)
+{
+    plugin_data *data = (plugin_data *) user_data;
+    const gchar *body = NULL;
+    gsize len = 0;
+#if SOUP_CHECK_VERSION(3, 0, 0)
+    GError *error = NULL;
+    GBytes *response = NULL;
+
+    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
+                                                 result, &error);
+    if (G_LIKELY(error == NULL)) {
+        body = g_bytes_get_data(response, &len);
+#else
+    if (msg->status_code == 200 || msg->status_code == 203) {
+        if (G_LIKELY(msg->response_body && msg->response_body->data)) {
+            body = msg->response_body->data;
+            len = msg->response_body->length;
+        }
+#endif
+        if (body && len > 0) {
+            json_object *root = json_tokener_parse(body);
+            if (root) {
+                json_object *jstatus = NULL, *jdata = NULL;
+                if (json_object_object_get_ex(root, "status", &jstatus) &&
+                    strcmp(json_object_get_string(jstatus), "ok") == 0) {
+                    if (json_object_object_get_ex(root, "data", &jdata)) {
+                        json_object *jaqi = NULL;
+                        if (json_object_object_get_ex(jdata, "aqi", &jaqi))
+                            data->aqi_value = json_object_get_int(jaqi);
+
+                        json_object *jcity = NULL;
+                        if (json_object_object_get_ex(jdata, "city", &jcity)) {
+                            json_object *jname = NULL;
+                            if (json_object_object_get_ex(jcity, "name", &jname)) {
+                                g_free(data->aqi_station);
+                                data->aqi_station = g_strdup(
+                                    json_object_get_string(jname));
+                            }
+                        }
+                        weather_debug("WAQI: AQI=%d station=%s",
+                                      data->aqi_value,
+                                      data->aqi_station ? data->aqi_station : "?");
+                    }
+                }
+                json_object_put(root);
+            }
+        }
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        g_bytes_unref(response);
+    } else {
+        weather_debug("WAQI download failed: %s",
+                      error ? error->message : "unknown");
+        g_clear_error(&error);
+#else
+    } else {
+        weather_debug("WAQI download failed, HTTP status %d", msg->status_code);
+#endif
+    }
+
+    data->waqi_update->next = time(NULL) + 30 * 60;
+    update_scrollbox(data, FALSE);
+}
+
+
+static void
+ec_start_waqi_update(plugin_data *data)
+{
+    gchar *url;
+
+    if (!data->waqi_api_key || data->waqi_api_key[0] == '\0')
+        return;
+    if (!data->lat || !data->lon)
+        return;
+
+    url = g_strdup_printf("https://api.waqi.info/feed/geo:%s;%s/?token=%s",
+                          data->lat, data->lon, data->waqi_api_key);
+    weather_debug("WAQI: fetching %s", url);
+    weather_http_queue_request(data->session, url, cb_waqi_update, data);
+    g_free(url);
+}
+
+
+/* ─── EC AQHI ─── */
+
+static void
+#if SOUP_CHECK_VERSION(3, 0, 0)
+cb_aqhi_observation(GObject *source,
+                    GAsyncResult *result,
+#else
+cb_aqhi_observation(SoupSession *session,
+                    SoupMessage *msg,
+#endif
+                    gpointer user_data)
+{
+    plugin_data *data = (plugin_data *) user_data;
+    const gchar *body = NULL;
+    gsize len = 0;
+#if SOUP_CHECK_VERSION(3, 0, 0)
+    GError *error = NULL;
+    GBytes *response = NULL;
+
+    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
+                                                 result, &error);
+    if (G_LIKELY(error == NULL)) {
+        body = g_bytes_get_data(response, &len);
+#else
+    if (msg->status_code == 200 || msg->status_code == 203) {
+        if (G_LIKELY(msg->response_body && msg->response_body->data)) {
+            body = msg->response_body->data;
+            len = msg->response_body->length;
+        }
+#endif
+        if (body && len > 0) {
+            gdouble val = ec_parse_aqhi_observation(body, len);
+            if (val >= 0) {
+                data->aqhi_value = val;
+                weather_debug("EC AQHI: value=%.1f", data->aqhi_value);
+            }
+        }
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        g_bytes_unref(response);
+    } else {
+        weather_debug("EC AQHI observation download failed: %s",
+                      error ? error->message : "unknown");
+        g_clear_error(&error);
+#else
+    } else {
+        weather_debug("EC AQHI observation download failed, HTTP %d",
+                      msg->status_code);
+#endif
+    }
+
+    data->aqhi_update->next = time(NULL) + 30 * 60;
+    update_scrollbox(data, FALSE);
+}
+
+
+static void
+#if SOUP_CHECK_VERSION(3, 0, 0)
+cb_aqhi_sitelist(GObject *source,
+                 GAsyncResult *result,
+#else
+cb_aqhi_sitelist(SoupSession *session,
+                 SoupMessage *msg,
+#endif
+                 gpointer user_data)
+{
+    plugin_data *data = (plugin_data *) user_data;
+    const gchar *body = NULL;
+    gsize len = 0;
+#if SOUP_CHECK_VERSION(3, 0, 0)
+    GError *error = NULL;
+    GBytes *response = NULL;
+
+    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
+                                                 result, &error);
+    if (G_LIKELY(error == NULL)) {
+        body = g_bytes_get_data(response, &len);
+#else
+    if (msg->status_code == 200 || msg->status_code == 203) {
+        if (G_LIKELY(msg->response_body && msg->response_body->data)) {
+            body = msg->response_body->data;
+            len = msg->response_body->length;
+        }
+#endif
+        if (body && len > 0) {
+            gdouble lat = data->lat ? g_ascii_strtod(data->lat, NULL) : 0.0;
+            gdouble lon = data->lon ? g_ascii_strtod(data->lon, NULL) : 0.0;
+            ec_aqhi_region *region =
+                ec_find_nearest_aqhi_region(body, len, lat, lon);
+            if (region) {
+                g_free(data->aqhi_zone_id);
+                data->aqhi_zone_id = g_strdup(region->zone_id);
+                g_free(data->aqhi_region_id);
+                data->aqhi_region_id = g_strdup(region->region_id);
+                ec_aqhi_region_free(region);
+
+                /* Fetch observation */
+                gchar *url = g_strdup_printf(EC_AQHI_OBS_URL,
+                                             data->aqhi_zone_id,
+                                             data->aqhi_region_id);
+                weather_debug("EC AQHI: fetching observation %s", url);
+                weather_http_queue_request(data->session, url,
+                                           cb_aqhi_observation, data);
+                g_free(url);
+            } else {
+                g_warning("EC AQHI: Could not find nearest region.");
+                data->aqhi_update->next = time(NULL) + 30 * 60;
+            }
+        }
+#if SOUP_CHECK_VERSION(3, 0, 0)
+        g_bytes_unref(response);
+    } else {
+        weather_debug("EC AQHI site list download failed: %s",
+                      error ? error->message : "unknown");
+        g_clear_error(&error);
+#else
+    } else {
+        weather_debug("EC AQHI site list download failed, HTTP %d",
+                      msg->status_code);
+#endif
+        data->aqhi_update->next = time(NULL) + 30 * 60;
+    }
+}
+
+
+static void
+ec_start_aqhi_update(plugin_data *data)
+{
+    if (!data->lat || !data->lon)
+        return;
+
+    if (data->aqhi_zone_id && data->aqhi_region_id) {
+        gchar *url = g_strdup_printf(EC_AQHI_OBS_URL,
+                                     data->aqhi_zone_id, data->aqhi_region_id);
+        weather_debug("EC AQHI: fetching observation %s", url);
+        weather_http_queue_request(data->session, url,
+                                   cb_aqhi_observation, data);
+        g_free(url);
+    } else {
+        weather_debug("EC AQHI: no region cached, fetching site list.");
+        weather_http_queue_request(data->session, EC_AQHI_SITE_LIST_URL,
+                                   cb_aqhi_sitelist, data);
+    }
+}
+
+
 static gboolean
 update_handler(gpointer user_data)
 {
@@ -867,6 +1445,11 @@ update_handler(gpointer user_data)
         data->weather_update->next = time_calc_hour(now_tm, 1);
         data->weather_update->started = TRUE;
 
+        if (data->data_source == DATASOURCE_ENVCANADA) {
+            ec_start_weather_update(data);
+            return FALSE;
+        }
+
         /* build url */
         url = g_strdup_printf("https://aa062reffgwvo1efa.api.met.no"
                               "/weatherapi/locationforecast/%s/"
@@ -883,6 +1466,20 @@ update_handler(gpointer user_data)
         /* cb_weather_update will deal with everything that follows this
          * block, so let's return instead of doing things twice */
         return FALSE;
+    }
+
+    /* fetch WAQI air quality index if API key is configured */
+    if (data->waqi_api_key && data->waqi_api_key[0] != '\0' &&
+        difftime(data->waqi_update->next, now_t) <= 0) {
+        data->waqi_update->next = time_calc_hour(now_tm, 1);
+        ec_start_waqi_update(data);
+    }
+
+    /* fetch EC AQHI (free, no key required) if using EC data source */
+    if (data->data_source == DATASOURCE_ENVCANADA &&
+        difftime(data->aqhi_update->next, now_t) <= 0) {
+        data->aqhi_update->next = time_calc_hour(now_tm, 1);
+        ec_start_aqhi_update(data);
     }
 
     /* update current conditions, icon and labels */
@@ -1117,6 +1714,18 @@ xfceweather_read_config (XfcePanelPlugin *plugin,
     data->cache_file_max_age = xfceweather_xfconf_get_int (data, SETTING_CACHE_MAX_AGE, CACHE_FILE_MAX_AGE);
     data->power_saving = xfceweather_xfconf_get_bool (data, SETTING_POWER_SAVING, TRUE);
 
+    data->data_source = xfceweather_xfconf_get_int (data, SETTING_DATA_SOURCE, DATASOURCE_METNO);
+    g_free(data->ec_province);
+    data->ec_province = xfceweather_xfconf_get_string (data, SETTING_EC_PROVINCE);
+    g_free(data->ec_station_id);
+    data->ec_station_id = xfceweather_xfconf_get_string (data, SETTING_EC_STATION);
+    g_free(data->waqi_api_key);
+    data->waqi_api_key = xfceweather_xfconf_get_string (data, SETTING_WAQI_KEY);
+    g_free(data->aqhi_zone_id);
+    data->aqhi_zone_id = xfceweather_xfconf_get_string (data, SETTING_AQHI_ZONE);
+    g_free(data->aqhi_region_id);
+    data->aqhi_region_id = xfceweather_xfconf_get_string (data, SETTING_AQHI_REGION);
+
     /* Units */
     if (data->units)
         g_slice_free(units_config, data->units);
@@ -1217,6 +1826,18 @@ xfceweather_write_config (XfcePanelPlugin *plugin,
 
     xfceweather_xfconf_set_intbool (data, SETTING_CACHE_MAX_AGE, data->cache_file_max_age, FALSE);
     xfceweather_xfconf_set_intbool (data, SETTING_POWER_SAVING, data->power_saving, TRUE);
+
+    xfceweather_xfconf_set_intbool (data, SETTING_DATA_SOURCE, data->data_source, FALSE);
+    if (data->ec_province)
+        xfceweather_xfconf_set_string (data, SETTING_EC_PROVINCE, data->ec_province);
+    if (data->ec_station_id)
+        xfceweather_xfconf_set_string (data, SETTING_EC_STATION, data->ec_station_id);
+    if (data->waqi_api_key)
+        xfceweather_xfconf_set_string (data, SETTING_WAQI_KEY, data->waqi_api_key);
+    if (data->aqhi_zone_id)
+        xfceweather_xfconf_set_string (data, SETTING_AQHI_ZONE, data->aqhi_zone_id);
+    if (data->aqhi_region_id)
+        xfceweather_xfconf_set_string (data, SETTING_AQHI_REGION, data->aqhi_region_id);
 
     xfceweather_xfconf_set_intbool (data, SETTING_TEMPERATURE, data->units->temperature, FALSE);
     xfceweather_xfconf_set_intbool (data, SETTING_PRESSURE, data->units->pressure, FALSE);
@@ -2322,11 +2943,23 @@ xfceweather_free(XfcePanelPlugin *plugin,
     g_free(data->offset);
     g_free(data->timezone_initial);
     g_free(data->geonames_username);
+    g_free(data->ec_province);
+    g_free(data->ec_station_id);
+    if (data->ec_alerts) {
+        g_ptr_array_unref(data->ec_alerts);
+        data->ec_alerts = NULL;
+    }
+    g_free(data->waqi_api_key);
+    g_free(data->aqi_station);
+    g_free(data->aqhi_zone_id);
+    g_free(data->aqhi_region_id);
 
     /* free update infos */
     g_slice_free(update_info, data->weather_update);
     g_slice_free(update_info, data->astro_update);
     g_slice_free(update_info, data->conditions_update);
+    g_slice_free(update_info, data->waqi_update);
+    g_slice_free(update_info, data->aqhi_update);
 
     /* free current data */
     data->current_astro = NULL;

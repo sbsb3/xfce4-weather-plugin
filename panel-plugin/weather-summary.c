@@ -24,6 +24,7 @@
 #include "weather-summary.h"
 #include "weather-translate.h"
 #include "weather-icon.h"
+#include "weather-ec.h"
 
 static gboolean
 lnk_clicked(GtkTextTag *tag,
@@ -590,6 +591,48 @@ create_summary_tab(plugin_data *data)
     APPEND_BTEXT(_("\nAtmosphere\n"));
     APPEND_TEXT_ITEM(_("Barometric pressure"), PRESSURE);
     APPEND_TEXT_ITEM(_("Relative humidity"), HUMIDITY);
+
+    /* EC alerts */
+    if (data->ec_alerts && data->ec_alerts->len > 0) {
+        guint ai;
+        APPEND_BTEXT(_("\nWeather Alerts\n"));
+        for (ai = 0; ai < data->ec_alerts->len; ai++) {
+            ec_alert *alert = g_ptr_array_index(data->ec_alerts, ai);
+            gchar *alert_line;
+            if (alert->description)
+                alert_line = g_strdup_printf("\t%s\n", alert->description);
+            else if (alert->type)
+                alert_line = g_strdup_printf("\t%s\n", alert->type);
+            else
+                continue;
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(buffer), &iter,
+                                   alert_line, -1);
+            g_free(alert_line);
+        }
+    }
+
+    /* AQI / AQHI */
+    if (data->aqi_value >= 0 || data->aqhi_value >= 0.0) {
+        APPEND_BTEXT(_("\nAir Quality\n"));
+        if (data->aqi_value >= 0) {
+            gchar *station_part = data->aqi_station ?
+                g_strdup_printf(" \xe2\x80\x93 %s", data->aqi_station) :
+                g_strdup("");
+            gchar *aqi_line = g_strdup_printf(
+                _("\tAQI (WAQI): %d%s\n"), data->aqi_value, station_part);
+            g_free(station_part);
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(buffer), &iter,
+                                   aqi_line, -1);
+            g_free(aqi_line);
+        }
+        if (data->aqhi_value >= 0.0) {
+            gchar *aqhi_line = g_strdup_printf(
+                _("\tAQHI (Environment Canada): %.0f\n"), data->aqhi_value);
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(buffer), &iter,
+                                   aqhi_line, -1);
+            g_free(aqhi_line);
+        }
+    }
 
     /* clouds */
     APPEND_BTEXT(_("\nClouds\n"));

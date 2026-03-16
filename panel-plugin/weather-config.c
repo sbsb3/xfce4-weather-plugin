@@ -17,6 +17,7 @@
  */
 
 #include <string.h>
+#include <time.h>
 #include <libxfce4ui/libxfce4ui.h>
 
 #include "weather-parsers.h"
@@ -28,7 +29,7 @@
 #include "weather-scrollbox.h"
 
 #define UPDATE_TIMER_DELAY 7
-#define OPTIONS_N 15
+#define OPTIONS_N 17
 #define BORDER 4
 #define LOC_NAME_MAX_LEN 50
 #define TIMEZONE_MAX_LEN 40
@@ -104,6 +105,8 @@ static const labeloption labeloptions[OPTIONS_N] = {
     {N_("Cloudiness (C)"), CLOUDINESS},
     {N_("Fog (F)"), FOG},
     {N_("Precipitation (R)"), PRECIPITATION},
+    {N_("Air Quality Index - WAQI (AQI)"), AQI},
+    {N_("Air Quality Health Index - EC (AQHI)"), AQHI},
 };
 
 static xfceweather_dialog *global_dialog = NULL;
@@ -547,6 +550,38 @@ text_timezone_changed(const GtkWidget *entry,
 
 
 static void
+cb_waqi_key_changed(GtkWidget *entry,
+                    gpointer user_data)
+{
+    xfceweather_dialog *dialog = (xfceweather_dialog *) user_data;
+    const gchar *key = gtk_entry_get_text(GTK_ENTRY(entry));
+    g_free(dialog->pd->waqi_api_key);
+    dialog->pd->waqi_api_key = (key && key[0]) ? g_strdup(key) : NULL;
+    /* Reset update time so it fetches soon */
+    if (dialog->pd->waqi_update)
+        dialog->pd->waqi_update->next = time(NULL);
+}
+
+
+static void
+cb_data_source_changed(GtkWidget *combo,
+                       gpointer user_data)
+{
+    xfceweather_dialog *dialog = (xfceweather_dialog *) user_data;
+    data_source_type new_source = gtk_combo_box_get_active(GTK_COMBO_BOX(combo));
+    if (dialog->pd->data_source != new_source) {
+        dialog->pd->data_source = new_source;
+        /* clear cached EC station so it gets re-detected */
+        g_free(dialog->pd->ec_province);
+        dialog->pd->ec_province = NULL;
+        g_free(dialog->pd->ec_station_id);
+        dialog->pd->ec_station_id = NULL;
+        schedule_delayed_data_update(dialog);
+    }
+}
+
+
+static void
 create_location_page(xfceweather_dialog *dialog)
 {
     GtkWidget *button_loc_change;
@@ -591,6 +626,48 @@ create_location_page(xfceweather_dialog *dialog)
                            dialog->pd->timezone);
     else
         gtk_entry_set_text(GTK_ENTRY(dialog->text_timezone), "");
+
+    /* data source */
+    {
+        GtkWidget *grid = GTK_WIDGET(gtk_builder_get_object(GTK_BUILDER(dialog->builder), "grid1"));
+        GtkWidget *lbl = gtk_label_new_with_mnemonic(_("_Data source:"));
+        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+        dialog->combo_data_source = gtk_combo_box_text_new();
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dialog->combo_data_source),
+                                       _("met.no (international)"));
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dialog->combo_data_source),
+                                       _("Environment Canada (Canada)"));
+        gtk_label_set_mnemonic_widget(GTK_LABEL(lbl), dialog->combo_data_source);
+        gtk_widget_show(lbl);
+        gtk_widget_show(dialog->combo_data_source);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, 6, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), dialog->combo_data_source, 1, 6, 1, 1);
+        gtk_combo_box_set_active(GTK_COMBO_BOX(dialog->combo_data_source),
+                                 dialog->pd->data_source);
+        g_signal_connect(G_OBJECT(dialog->combo_data_source), "changed",
+                         G_CALLBACK(cb_data_source_changed), dialog);
+    }
+
+    /* WAQI API key */
+    {
+        GtkWidget *grid = GTK_WIDGET(gtk_builder_get_object(GTK_BUILDER(dialog->builder), "grid1"));
+        GtkWidget *lbl = gtk_label_new_with_mnemonic(_("_WAQI API key:"));
+        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+        dialog->text_waqi_key = gtk_entry_new();
+        gtk_entry_set_max_length(GTK_ENTRY(dialog->text_waqi_key), 64);
+        gtk_entry_set_placeholder_text(GTK_ENTRY(dialog->text_waqi_key),
+                                       _("Optional – get a free key at waqi.info"));
+        gtk_label_set_mnemonic_widget(GTK_LABEL(lbl), dialog->text_waqi_key);
+        if (dialog->pd->waqi_api_key)
+            gtk_entry_set_text(GTK_ENTRY(dialog->text_waqi_key),
+                               dialog->pd->waqi_api_key);
+        gtk_widget_show(lbl);
+        gtk_widget_show(dialog->text_waqi_key);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, 7, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), dialog->text_waqi_key, 1, 7, 1, 1);
+        g_signal_connect(G_OBJECT(dialog->text_waqi_key), "changed",
+                         G_CALLBACK(cb_waqi_key_changed), dialog);
+    }
 
     /* set up the altitude spin box and unit label (meters/feet) */
     setup_altitude(dialog);

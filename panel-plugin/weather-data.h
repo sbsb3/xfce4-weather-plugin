@@ -40,7 +40,9 @@ typedef enum {
     CLOUDINESS,
     FOG,
     PRECIPITATION,
-    SYMBOL
+    SYMBOL,
+    AQI,
+    AQHI
 } data_types;
 
 typedef enum {
