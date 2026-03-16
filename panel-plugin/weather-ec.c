@@ -682,6 +682,12 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
             if (fc_time == 0)
                 continue;
 
+            /* Observed conditions at obs_time take priority over forecast
+             * data for the same hour; skip any hourly entry that doesn't
+             * strictly follow the observation. */
+            if (difftime(fc_time, obs_time) <= 0)
+                continue;
+
             gdouble h_temp    = 0.0;
             gdouble h_wind_kmh = 0.0;
             gchar  *h_wind_dir = NULL;
@@ -813,7 +819,18 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
         if (xmlStrcmp(cur->name, (const xmlChar *) "forecastGroup") != 0)
             continue;
 
-        gint period_idx = 0;
+        /* Use the LOCAL calendar date of the observation as the base.
+         * We advance cur_day whenever a daytime period follows a night
+         * period, so the sequence Tonight/Tuesday/Tuesday night/Wednesday…
+         * or Today/Tonight/Tuesday… both land on the right calendar days.
+         * Hours are set in LOCAL time (14:00 = mid-afternoon, 23:00 = night)
+         * so the summary-window columns (Morning/Afternoon/Evening/Night)
+         * are populated correctly regardless of the observer's UTC offset. */
+        struct tm obs_local;
+        localtime_r(&obs_time, &obs_local);
+        gint     cur_day       = 0;
+        gboolean prev_was_night = FALSE;
+
         for (forecast_node = cur->children;
              forecast_node; forecast_node = forecast_node->next) {
             if (forecast_node->type != XML_ELEMENT_NODE)
@@ -877,34 +894,28 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
 
             if (!fc_got_temp && fc_icon < 0) {
                 g_free(period_name);
-                period_idx++;
                 continue;
             }
 
-            /* Determine forecast time:
-             * Each period is roughly a 12h block starting from obs_time.
-             * Odd periods → nighttime (hour 23), even → daytime (hour 14)
-             * in UTC; the exact local hour doesn't matter as much as
-             * landing on the right calendar day. */
-            time_t fc_base = obs_time + (time_t) period_idx * 12 * 3600;
-            /* Round to the appropriate hour of day to help make_forecast_data */
-            struct tm fc_tm;
-            gmtime_r(&fc_base, &fc_tm);
             gboolean is_night = period_name &&
                 (g_ascii_strncasecmp(period_name, "Tonight", 7) == 0 ||
                  strstr(period_name, "night") != NULL ||
                  strstr(period_name, "Night") != NULL);
 
-            fc_tm.tm_hour = is_night ? 23 : 14;
-            fc_tm.tm_min  = 0;
-            fc_tm.tm_sec  = 0;
-            /* Use timegm-equivalent: seconds from epoch in UTC */
-            GDateTime *gdt = g_date_time_new_utc(
-                fc_tm.tm_year + 1900, fc_tm.tm_mon + 1, fc_tm.tm_mday,
-                fc_tm.tm_hour, 0, 0.0);
-            time_t fc_point = gdt ? g_date_time_to_unix(gdt) : fc_base;
-            if (gdt)
-                g_date_time_unref(gdt);
+            /* Advance the calendar day when a daytime period follows a
+             * night period (night→day boundary = new calendar day). */
+            if (!is_night && prev_was_night)
+                cur_day++;
+
+            /* Build the forecast time in LOCAL time so it lands in the
+             * correct Morning/Afternoon/Evening/Night column. */
+            struct tm fc_local = obs_local;
+            fc_local.tm_mday += cur_day;
+            fc_local.tm_hour  = is_night ? 23 : 14;
+            fc_local.tm_min   = 0;
+            fc_local.tm_sec   = 0;
+            fc_local.tm_isdst = -1;
+            time_t fc_point   = mktime(&fc_local);
 
             /* Create point timeslice for this forecast period */
             xml_time *pt = make_timeslice();
@@ -940,8 +951,8 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                 }
             }
 
+            prev_was_night = is_night;
             g_free(period_name);
-            period_idx++;
         }
         break; /* only one forecastGroup */
     }
