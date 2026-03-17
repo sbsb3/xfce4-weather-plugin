@@ -2003,22 +2003,14 @@ forecast_click(GtkWidget *widget,
                gpointer user_data)
 {
     plugin_data *data = user_data;
+    gchar *url;
 
-    if (data->summary_window != NULL)
-        gtk_widget_destroy(data->summary_window);
-    else {
-        /* sync toggle button state */
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->button), TRUE);
-
-        data->summary_window = create_summary_window(data);
-
-        /* start the summary window subtitle update timer */
-        update_summary_subtitle(data);
-
-        g_signal_connect(G_OBJECT(data->summary_window), "destroy",
-                         G_CALLBACK(close_summary), data);
-        gtk_widget_show_all(data->summary_window);
-    }
+    url = g_strdup_printf(
+        "https://weather.gc.ca/en/location/index.html?coords=%s,%s",
+        data->lat ? data->lat : "0",
+        data->lon ? data->lon : "0");
+    gtk_show_uri_on_window(NULL, url, GDK_CURRENT_TIME, NULL);
+    g_free(url);
 }
 
 
