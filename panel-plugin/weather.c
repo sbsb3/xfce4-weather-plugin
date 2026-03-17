@@ -2273,9 +2273,23 @@ weather_get_tooltip_text(const plugin_data *data)
     DATA_AND_UNIT(fog, FOG);
     DATA_AND_UNIT(cloudiness, CLOUDINESS);
 
+    /* Build optional AQI/AQHI suffix lines.
+     * Values are numeric so g_strdup_printf is safe (no XML escaping needed). */
+    gchar *aqi_lines = g_strdup("");
+    if (data->aqi_value >= 0) {
+        gchar *prev = aqi_lines;
+        aqi_lines = g_strdup_printf("%s<b>AQI:</b> %d\n", prev, data->aqi_value);
+        g_free(prev);
+    }
+    if (data->aqhi_value >= 0) {
+        gchar *prev = aqi_lines;
+        aqi_lines = g_strdup_printf("%s<b>AQHI:</b> %.1f\n", prev, data->aqhi_value);
+        g_free(prev);
+    }
+
     switch (data->tooltip_style) {
-    case TOOLTIP_SIMPLE:
-        text = g_markup_printf_escaped
+    case TOOLTIP_SIMPLE: {
+        gchar *base = g_markup_printf_escaped
             /*
              * TRANSLATORS: This is the simple tooltip. For a bigger challenge,
              * look at the verbose tooltip style further below ;-)
@@ -2290,11 +2304,13 @@ weather_get_tooltip_text(const plugin_data *data)
              data->location_name, alt,
              translate_desc(sym, data->night_time),
              temp, windspeed, winddir, windgust_str, pressure, humidity);
+        text = g_strconcat(base, aqi_lines, NULL);
+        g_free(base);
         break;
-
+    }
     case TOOLTIP_VERBOSE:
-    default:
-        text = g_markup_printf_escaped
+    default: {
+        gchar *base = g_markup_printf_escaped
             /*
              * TRANSLATORS: Re-arrange and align at will, optionally using
              * abbreviations for labels if desired or necessary. Just take
@@ -2324,8 +2340,12 @@ weather_get_tooltip_text(const plugin_data *data)
              pressure, humidity,
              fog, cloudiness,
              sunval);
+        text = g_strconcat(base, *aqi_lines ? "\n" : "", aqi_lines, NULL);
+        g_free(base);
         break;
     }
+    }
+    g_free(aqi_lines);
     g_free(sunval);
     g_free(sym);
     g_free(alt);

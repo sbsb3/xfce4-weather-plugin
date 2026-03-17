@@ -1520,6 +1520,18 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
                  "only lead to rough estimates and may not represent the "
                  "real amount of snow.");
         break;
+    case AQI:
+        text = _("Air Quality Index from the World Air Quality Index project "
+                 "(waqi.info). Requires a free API key entered on the "
+                 "Location page. Values range from 0 (good) to 300+ "
+                 "(hazardous).");
+        break;
+    case AQHI:
+        text = _("Air Quality Health Index from Environment Canada. "
+                 "No API key required. Scale from 1 (low risk) to 10+ "
+                 "(very high risk), indicating the health risk posed by "
+                 "local air quality.");
+        break;
     }
 
     gtk_widget_set_tooltip_markup(GTK_WIDGET(optmenu), text);

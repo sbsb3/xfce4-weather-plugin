@@ -1054,6 +1054,8 @@ Leave this field empty to use the timezone set by your system. Invalid entries w
                               <item id="15" translatable="yes">Cloudiness (C)</item>
                               <item id="16" translatable="yes">Fog (F)</item>
                               <item id="17" translatable="yes">Precipitation (R)</item>
+                              <item id="18" translatable="yes">Air Quality Index - WAQI (AQI)</item>
+                              <item id="19" translatable="yes">Air Quality Health Index - EC (AQHI)</item>
                             </items>
                           </object>
                           <packing>
