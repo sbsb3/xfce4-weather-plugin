@@ -730,7 +730,9 @@ cb_ec_dirlist(SoupSession *session,
 
     g_warning("EC: Could not find weather XML for station %s after %d attempts.",
               ctx->station_id, EC_MAX_HOURS_BACK);
-    data->weather_update->finished = TRUE;
+    data->weather_update->started = FALSE;
+    data->weather_update->next = time(NULL) + CONN_RETRY_INTERVAL_LARGE;
+    schedule_next_wakeup(data);
     ec_dir_ctx_free(ctx);
 }
 
@@ -795,7 +797,9 @@ cb_ec_sitelist(SoupSession *session,
         ec_station_free(station);
     } else {
         g_warning("EC: Could not find nearest station from site list.");
-        data->weather_update->finished = TRUE;
+        data->weather_update->started = FALSE;
+        data->weather_update->next = time(NULL) + CONN_RETRY_INTERVAL_LARGE;
+        schedule_next_wakeup(data);
     }
 }
 
