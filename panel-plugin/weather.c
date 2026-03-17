@@ -343,12 +343,12 @@ update_icon(plugin_data *data)
                    data->round, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
 
-    /* Use native EC icons when available (symbol encoded as "EC:NN") */
-    if (str && g_str_has_prefix(str, "EC:")) {
-        gint code = atoi(str + 3);
+    /* Always use native EC icons; fall back to bundled NODATA if unavailable */
+    {
+        gint code = (str && g_str_has_prefix(str, "EC:")) ? atoi(str + 3) : -1;
         icon = ec_get_icon(code, size, scale_factor);
-    } else {
-        icon = get_icon(data->icon_theme, str, size, scale_factor, data->night_time);
+        if (!icon)
+            icon = get_icon(data->icon_theme, NULL, size, scale_factor, FALSE);
     }
     gtk_image_set_from_surface(GTK_IMAGE(data->iconimage), icon);
     if (G_LIKELY(icon))
@@ -358,12 +358,11 @@ update_icon(plugin_data *data)
     size = get_tooltip_icon_size(data);
     if (G_LIKELY(data->tooltip_icon))
         cairo_surface_destroy(data->tooltip_icon);
-    if (str && g_str_has_prefix(str, "EC:")) {
-        gint code = atoi(str + 3);
+    {
+        gint code = (str && g_str_has_prefix(str, "EC:")) ? atoi(str + 3) : -1;
         data->tooltip_icon = ec_get_icon(code, size, scale_factor);
-    } else {
-        data->tooltip_icon = get_icon(data->icon_theme, str, size, scale_factor,
-                                      data->night_time);
+        if (!data->tooltip_icon)
+            data->tooltip_icon = get_icon(data->icon_theme, NULL, size, scale_factor, FALSE);
     }
     g_free(str);
     weather_debug("Updated panel and tooltip icons.");
@@ -539,278 +538,6 @@ calc_next_download_time(const update_info *upi,
     return time_calc(retry_tm, 0, 0, 0, 0, 0, interval);
 }
 
-/*
- * Process downloaded sun astro data and schedule next astro update.
- */
-static void
-#if SOUP_CHECK_VERSION(3, 0, 0)
-cb_astro_update_sun(GObject *source,
-                    GAsyncResult *result,
-#else
-cb_astro_update_sun(SoupSession *session,
-                    SoupMessage *msg,
-#endif
-                    gpointer user_data)
-{
-    plugin_data *data = user_data;
-    json_object *json_tree;
-    time_t now_t;
-    guint astro_forecast_days;
-    const gchar *body = NULL;
-    gsize len = 0;
-#if SOUP_CHECK_VERSION(3, 0, 0)
-    SoupMessage *msg;
-    GError *error = NULL;
-    GBytes *response;
-
-    msg = soup_session_get_async_result_message(SOUP_SESSION(source), result);
-    data->msg_parse->sun_msg_processed++;
-    data->astro_update->http_status_code = soup_message_get_status(msg);
-    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
-                                                 result, &error);
-    if (G_LIKELY(error == NULL)) {
-        body = g_bytes_get_data(response, &len);
-#else
-     data->msg_parse->sun_msg_processed++;
-     data->astro_update->http_status_code = msg->status_code;
-     if ((msg->status_code == 200 || msg->status_code == 203)) {
-         if (G_LIKELY(msg->response_body && msg->response_body->data)) {
-             body = msg->response_body->data;
-             len = msg->response_body->length;
-         }
-#endif
-        json_tree = get_json_tree(body, len);
-        if (G_LIKELY(json_tree)) {
-            if (!parse_astrodata_sun(json_tree, data->astrodata))  {
-                data->msg_parse->sun_msg_parse_error++;
-                g_warning("Error parsing sun astronomical data!");
-                weather_debug("data->astrodata:%s",
-                              weather_dump_astrodata(data->astrodata));
-            } else {
-                weather_dump(weather_dump_astrodata, data->astrodata);
-            }
-            g_assert(json_object_put(json_tree) ==1);
-        } else {
-            g_warning("Error parsing sun astronomical data!");
-            weather_debug("No json_tree");
-        }
-#if SOUP_CHECK_VERSION(3, 0, 0)
-        g_bytes_unref(response);
-#endif
-     } else {
-        data->msg_parse->http_msg_fail = TRUE;
-#if SOUP_CHECK_VERSION(3, 0, 0)
-        g_warning_once("Download of sun astronomical data failed: %s",
-                       error->message);
-        g_error_free(error);
-#else
-        g_warning_once("Download of sun astronomical data failed with HTTP Status Code %d, Reason phrase: %s",
-                       msg->status_code, msg->reason_phrase);
-#endif
-    }
-
-    astro_forecast_days = data->forecast_days + 1;
-    if (data->msg_parse->sun_msg_processed == astro_forecast_days) {
-        if (G_LIKELY(data->msg_parse->sun_msg_parse_error == 0 && !data->msg_parse->http_msg_fail)) {
-            data->msg_parse->astro_dwnld_state = ASTRO_DWNLD_MOON;
-            time(&now_t);
-            /* schedule astro moon data downloads immediately */
-            data->astro_update->next = now_t;
-            weather_debug( "astro moon data update scheduled! \n");
-            schedule_next_wakeup(data);
-        } else {
-            data->msg_parse->astro_dwnld_state = ASTRO_DWNLD_SUN;
-            weather_debug( "astro sun data update failed! \n");
-            time(&now_t);
-            data->astro_update->next = calc_next_download_time(data->astro_update,now_t);
-        }
-    }
-}
-
-
-/*
- * Process downloaded moon astro data and schedule next astro update.
- */
-static void
-#if SOUP_CHECK_VERSION(3, 0, 0)
-cb_astro_update_moon(GObject *source,
-                     GAsyncResult *result,
-#else
-cb_astro_update_moon(SoupSession *session,
-                     SoupMessage *msg,
-#endif
-                     gpointer user_data)
-{
-    plugin_data *data = user_data;
-    json_object *json_tree;
-    time_t now_t;
-    guint astro_forecast_days;
-    const gchar *body = NULL;
-    gsize len = 0;
-#if SOUP_CHECK_VERSION(3, 0, 0)
-    SoupMessage *msg;
-    GError *error = NULL;
-    GBytes *response;
-
-    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
-                                                 result, &error);
-    msg = soup_session_get_async_result_message(SOUP_SESSION(source), result);
-    data->msg_parse->moon_msg_processed++;
-    data->astro_update->http_status_code = soup_message_get_status(msg);
-    if (G_LIKELY(error == NULL)) {
-        body = g_bytes_get_data(response, &len);
-#else
-     data->msg_parse->moon_msg_processed++;
-     data->astro_update->http_status_code = msg->status_code;
-     if ((msg->status_code == 200 || msg->status_code == 203)) {
-         if (G_LIKELY(msg->response_body && msg->response_body->data)) {
-             body = msg->response_body->data;
-             len = msg->response_body->length;
-         }
-#endif
-        json_tree = get_json_tree(body, len);
-        if (G_LIKELY(json_tree)) {
-            if (!parse_astrodata_moon(json_tree, data->astrodata))  {
-                data->msg_parse->moon_msg_parse_error++;
-                g_warning("Error parsing moon astronomical data");
-                weather_debug("data->astrodata:%s",
-                              weather_dump_astrodata(data->astrodata));
-            } else {
-                weather_dump(weather_dump_astrodata, data->astrodata);
-            }
-            g_assert(json_object_put(json_tree) ==1);
-        } else {
-            g_warning("Error parsing moon astronomical data");
-            weather_debug("No json_tree");
-        }
-#if SOUP_CHECK_VERSION(3, 0, 0)
-        g_bytes_unref(response);
-#endif
-     } else {
-        data->msg_parse->http_msg_fail = TRUE;
-#if SOUP_CHECK_VERSION(3, 0, 0)
-        g_warning_once("Download of moon astronomical data failed: %s",
-                       error->message);
-        g_error_free(error);
-#else
-        g_warning_once("Download of moon astronomical data failed with HTTP Status Code %d, Reason phrase: %s",
-                       msg->status_code, msg->reason_phrase);
-#endif
-     }
-
-    astro_forecast_days = data->forecast_days + 1;
-    if (data->msg_parse->sun_msg_processed == astro_forecast_days && data->msg_parse->moon_msg_processed == astro_forecast_days) {
-        if (G_LIKELY(data->msg_parse->moon_msg_parse_error == 0 && !data->msg_parse->http_msg_fail)) {
-            astrodata_clean(data->astrodata);
-            g_array_sort(data->astrodata, (GCompareFunc) xml_astro_compare);
-            data->astro_update->attempt = 0;
-            weather_debug( "astro sun data update scheduled! \n");
-            time(&now_t);
-            data->astro_update->last = now_t;
-            data->astro_update->next = calc_next_download_time(data->astro_update,now_t);
-            update_current_astrodata(data);
-            /* update icon */
-            data->night_time = is_night_time(data->current_astro, data->offset);
-            update_icon(data);
-            data->astro_update->finished = TRUE;
-            data->msg_parse->astro_dwnld_state = ASTRO_DWNLD_SUN;
-        } else {
-            data->msg_parse->astro_dwnld_state = ASTRO_DWNLD_MOON;
-            weather_debug( "astro moon data update failed! \n");
-            time(&now_t);
-            data->astro_update->next = calc_next_download_time(data->astro_update,now_t);
-            data->astro_update->attempt++;
-        }
-    }
-}
-
-
-/*
- * Process downloaded weather data and schedule next weather update.
- */
-static void
-#if SOUP_CHECK_VERSION(3, 0, 0)
-cb_weather_update(GObject *source,
-                  GAsyncResult *result,
-#else
-cb_weather_update(SoupSession *session,
-                  SoupMessage *msg,
-#endif
-                  gpointer user_data)
-{
-    plugin_data *data = user_data;
-    xmlDoc *doc = NULL;
-    xmlNode *root_node;
-    time_t now_t;
-    gboolean parsing_error = TRUE;
-    const gchar *body = NULL;
-    gsize len = 0;
-#if SOUP_CHECK_VERSION(3, 0, 0)
-    SoupMessage *msg;
-    GError *error = NULL;
-    GBytes *response = NULL;
-
-    weather_debug("Processing downloaded weather data.");
-    response = soup_session_send_and_read_finish(SOUP_SESSION(source),
-                                                 result, &error);
-    msg = soup_session_get_async_result_message(SOUP_SESSION(source), result);
-    time(&now_t);
-    data->weather_update->attempt++;
-    data->weather_update->http_status_code = soup_message_get_status(msg);
-    if (G_LIKELY(error == NULL)) {
-        body = g_bytes_get_data(response, &len);
-#else
-     weather_debug("Processing downloaded weather data.");
-     time(&now_t);
-     data->weather_update->attempt++;
-     data->weather_update->http_status_code = msg->status_code;
-     if (msg->status_code == 200 || msg->status_code == 203) {
-         if (G_LIKELY(msg->response_body && msg->response_body->data)) {
-             body = msg->response_body->data;
-             len = msg->response_body->length;
-         }
-#endif
-        doc = get_xml_document(body, len);
-        if (G_LIKELY(doc)) {
-            root_node = xmlDocGetRootElement(doc);
-            if (G_LIKELY(root_node))
-                if (parse_weather(root_node, data->weatherdata)) {
-                    data->weather_update->attempt = 0;
-                    data->weather_update->last = now_t;
-                    parsing_error = FALSE;
-                }
-            xmlFreeDoc(doc);
-        }
-#if SOUP_CHECK_VERSION(3, 0, 0)
-        g_bytes_unref(response);
-#endif
-        if (parsing_error)
-            g_warning("Error parsing weather data!");
-    } else {
-#if SOUP_CHECK_VERSION(3, 0, 0)
-        weather_debug("Download of weather data failed: %s", error->message);
-        g_error_free(error);
-#else
-        weather_debug
-            ("Download of weather data failed with HTTP Status Code %d, "
-             "Reason phrase: %s", msg->status_code, msg->reason_phrase);
-#endif
-    }
-     data->weather_update->next = calc_next_download_time(data->weather_update,
-                                                         now_t);
-
-    xml_weather_clean(data->weatherdata);
-    g_array_sort(data->weatherdata->timeslices,
-                 (GCompareFunc) xml_time_compare);
-    weather_debug("Updating current conditions.");
-    update_current_conditions(data, !parsing_error);
-    gtk_scrollbox_reset(GTK_SCROLLBOX(data->scrollbox));
-
-    data->weather_update->finished = TRUE;
-    weather_dump(weather_dump_weatherdata, data->weatherdata);
-}
-
-
 static void
 ec_dir_ctx_free(ec_dir_ctx *ctx)
 {
@@ -874,14 +601,15 @@ cb_ec_weather_xml(SoupSession *session,
         xml_weather_free(pdata->weatherdata);
         pdata->weatherdata = make_weather_data();
 
-        if (ec_parse_weather(body, len, pdata->weatherdata)) {
+        time_t ec_obs_time = 0;
+        if (ec_parse_weather(body, len, pdata->weatherdata, &ec_obs_time)) {
             pdata->weather_update->attempt = 0;
             pdata->weather_update->last = now_t;
             parsing_error = FALSE;
 
-            /* Also parse hourly/daily forecasts */
-            ec_parse_forecasts(body, len, pdata->weatherdata,
-                               pdata->weather_update->last);
+            /* Also parse hourly/daily forecasts, using the actual
+             * observation timestamp from the XML (not the download time). */
+            ec_parse_forecasts(body, len, pdata->weatherdata, ec_obs_time);
 
             /* Parse alerts and replace any previous ones */
             if (pdata->ec_alerts) {
@@ -1357,14 +1085,9 @@ static gboolean
 update_handler(gpointer user_data)
 {
     plugin_data *data = user_data;
-    gchar *api_version = FORECAST_API;
-    gchar *url;
     gboolean night_time;
-    time_t now_t, day_t;
+    time_t now_t;
     struct tm now_tm;
-    guint day;
-    dwnld_state astro_dwnld_state = data->msg_parse->astro_dwnld_state;
-    guint astro_forecast_days;
 
     g_assert(data != NULL);
     if (G_UNLIKELY(data == NULL))
@@ -1381,78 +1104,11 @@ update_handler(gpointer user_data)
     now_t = time(NULL);
     now_tm = *localtime(&now_t);
 
-    /* check if all started downloads are finished and the cache file
-       can be written */
-    if (data->astro_update->started && data->astro_update->finished &&
-        data->weather_update->started && data->weather_update->finished) {
-        data->astro_update->started = FALSE;
-        data->astro_update->finished = FALSE;
+    /* check if weather download finished and cache file can be written */
+    if (data->weather_update->started && data->weather_update->finished) {
         data->weather_update->started = FALSE;
         data->weather_update->finished = FALSE;
         write_cache_file(data);
-    }
-
-    /* fetch astronomical data */
-    if (difftime(data->astro_update->next, now_t) <= 0) {
-        /* real next update time will be calculated when update is finished,
-           this is to prevent spawning multiple updates in a row */
-        data->astro_update->next = time_calc_hour(now_tm, 1);
-        data->msg_parse->http_msg_fail = FALSE;
-        /* forecast astronomical data one day in advance */
-        astro_forecast_days = data->forecast_days + 1;
-        weather_debug("Fetching astronomical data. State: %s.\n", (int)astro_dwnld_state ? "ASTRO_DWNLD_MOON" : "ASTRO_DWNLD_SUN");
-        switch (astro_dwnld_state) {
-        case ASTRO_DWNLD_SUN:
-            data->astro_update->started = TRUE;
-            data->astro_update->attempt++;
-            data->msg_parse->sun_msg_processed = 0;
-            data->msg_parse->sun_msg_parse_error = 0;
-            for (day = 0; day < astro_forecast_days; day++) {
-                day_t = day_at_midnight(now_t, day);
-                now_tm = *localtime(&day_t);
-                /* build url */
-                url = g_strdup_printf("https://aa062reffgwvo1efa.api.met.no/weatherapi"
-                                      "/sunrise/3.0/sun?lat=%s&lon=%s&"
-                                      "date=%04d-%02d-%02d&"
-                                      "offset=%s",
-                                      data->lat, data->lon,
-                                      now_tm.tm_year + 1900,
-                                      now_tm.tm_mon + 1,
-                                      now_tm.tm_mday,
-                                      data->offset
-                                     );
-                /* start receive thread */
-                weather_debug("getting sun data:%s", url);
-                weather_http_queue_request(data->session, url,
-                                           cb_astro_update_sun, data);
-                g_free(url);
-            }
-            break;
-
-        case ASTRO_DWNLD_MOON:
-            data->msg_parse->moon_msg_processed = 0;
-            data->msg_parse->moon_msg_parse_error = 0;
-            for (day = 0; day < astro_forecast_days; day++) {
-                day_t = day_at_midnight(now_t, day);
-                now_tm = *localtime(&day_t);
-                url = g_strdup_printf("https://aa062reffgwvo1efa.api.met.no/weatherapi"
-                                      "/sunrise/3.0/moon?lat=%s&lon=%s&"
-                                      "date=%04d-%02d-%02d&"
-                                      "offset=%s",
-                                      data->lat, data->lon,
-                                      now_tm.tm_year + 1900,
-                                      now_tm.tm_mon + 1,
-                                      now_tm.tm_mday,
-                                      data->offset
-                                      );
-                /* start receive thread */
-                weather_debug("getting moon data: %s", url);
-                weather_http_queue_request(data->session, url,
-                                           cb_astro_update_moon, data);
-                g_free(url);
-            }
-            break;
-        }
     }
 
     /* fetch WAQI air quality index if API key is configured */
@@ -1462,52 +1118,25 @@ update_handler(gpointer user_data)
         ec_start_waqi_update(data);
     }
 
-    /* fetch EC AQHI (free, no key required) if using EC data source */
-    if (data->data_source == DATASOURCE_ENVCANADA &&
-        difftime(data->aqhi_update->next, now_t) <= 0) {
+    /* fetch EC AQHI (free, no key required) */
+    if (difftime(data->aqhi_update->next, now_t) <= 0) {
         data->aqhi_update->next = time_calc_hour(now_tm, 1);
         ec_start_aqhi_update(data);
     }
 
-    /* fetch weather data */
+    /* fetch weather data from Environment Canada */
     if (difftime(data->weather_update->next, now_t) <= 0) {
-        /* real next update time will be calculated when update is finished,
-           this is to prevent spawning multiple updates in a row */
         data->weather_update->next = time_calc_hour(now_tm, 1);
         data->weather_update->started = TRUE;
-
-        if (data->data_source == DATASOURCE_ENVCANADA) {
-            ec_start_weather_update(data);
-            return FALSE;
-        }
-
-        /* build url */
-        url = g_strdup_printf("https://aa062reffgwvo1efa.api.met.no"
-                              "/weatherapi/locationforecast/%s/"
-                              "classic?lat=%s&lon=%s&altitude=%d",
-                              api_version,
-                              data->lat, data->lon, data->msl);
-
-        /* start receive thread */
-        weather_debug("getting %s", url);
-        weather_http_queue_request(data->session, url,
-                                   cb_weather_update, data);
-        g_free(url);
-
-        /* cb_weather_update will deal with everything that follows this
-         * block, so let's return instead of doing things twice */
+        ec_start_weather_update(data);
         return FALSE;
     }
 
     /* update current conditions, icon and labels */
     if (difftime(data->conditions_update->next, now_t) <= 0) {
-        /* real next update time will be calculated when update is finished,
-           this is to prevent spawning multiple updates in a row */
         data->conditions_update->next = time_calc_hour(now_tm, 1);
         weather_debug("Updating current conditions.");
         update_current_conditions(data, FALSE);
-        /* update_current_conditions updates day/night time status
-           too, so quit here */
         return FALSE;
     }
 
@@ -1543,9 +1172,7 @@ schedule_next_wakeup(plugin_data *data)
 
     next_day_t = day_at_midnight(now_t, 1);
     diff = difftime(next_day_t, now_t);
-    data->next_wakeup_reason = "current astro data update";
-    SCHEDULE_WAKEUP_COMPARE(data->astro_update->next,
-                            "astro data download");
+    data->next_wakeup_reason = "weather data download";
     SCHEDULE_WAKEUP_COMPARE(data->weather_update->next,
                             "weather data download");
     SCHEDULE_WAKEUP_COMPARE(data->conditions_update->next,
@@ -1731,7 +1358,6 @@ xfceweather_read_config (XfcePanelPlugin *plugin,
     data->cache_file_max_age = xfceweather_xfconf_get_int (data, SETTING_CACHE_MAX_AGE, CACHE_FILE_MAX_AGE);
     data->power_saving = xfceweather_xfconf_get_bool (data, SETTING_POWER_SAVING, TRUE);
 
-    data->data_source = xfceweather_xfconf_get_int (data, SETTING_DATA_SOURCE, DATASOURCE_METNO);
     g_free(data->ec_province);
     data->ec_province = xfceweather_xfconf_get_string (data, SETTING_EC_PROVINCE);
     g_free(data->ec_station_id);
@@ -1844,7 +1470,6 @@ xfceweather_write_config (XfcePanelPlugin *plugin,
     xfceweather_xfconf_set_intbool (data, SETTING_CACHE_MAX_AGE, data->cache_file_max_age, FALSE);
     xfceweather_xfconf_set_intbool (data, SETTING_POWER_SAVING, data->power_saving, TRUE);
 
-    xfceweather_xfconf_set_intbool (data, SETTING_DATA_SOURCE, data->data_source, FALSE);
     if (data->ec_province)
         xfceweather_xfconf_set_string (data, SETTING_EC_PROVINCE, data->ec_province);
     if (data->ec_station_id)
@@ -2322,7 +1947,6 @@ update_weatherdata_with_reset(plugin_data *data)
     /* schedule downloads immediately */
     time(&now_t);
     data->weather_update->next = now_t;
-    data->astro_update->next = now_t;
     schedule_next_wakeup(data);
 
     weather_debug("Updated weatherdata with reset.");
@@ -2532,7 +2156,6 @@ xfceweather_create_options(XfcePanelPlugin *plugin,
     GtkBuilder *builder;
     xfceweather_dialog *dialog;
     GError *error = NULL;
-    time_t now_t;
     guint previous_forecast_days;
 
     if (data->settings_dialog != NULL) {
@@ -2562,13 +2185,7 @@ xfceweather_create_options(XfcePanelPlugin *plugin,
 
         weather_debug("forecast_days configuration changes? previous %d ---> current %d\n",
                       previous_forecast_days, data->forecast_days);
-        /* due to probable configuration changes schedule astro data downloads */
-        if ((previous_forecast_days < data->forecast_days) && !data->astro_update->started) {
-            time(&now_t);
-            data->astro_update->next = now_t + 1;
-            weather_debug("due to probable configuration changes: astro data update scheduled! \n");
-            schedule_next_wakeup(data);
-        }
+        schedule_next_wakeup(data);
     } else {
         g_warning ("Failed to load dialog: %s", error->message);
     }
@@ -2639,6 +2256,17 @@ weather_get_tooltip_text(const plugin_data *data)
     DATA_AND_UNIT(windbeau, WIND_BEAUFORT);
     DATA_AND_UNIT(winddir, WIND_DIRECTION);
     DATA_AND_UNIT(winddeg, WIND_DIRECTION_DEG);
+    value = get_data(conditions, data->units, WIND_GUST,
+                     data->round, data->night_time);
+    gchar *windgust_str;
+    if (value && *value) {
+        unit = get_unit(data->units, WIND_GUST);
+        windgust_str = g_strdup_printf(_(", gusts %s%s%s"), value,
+                                       strcmp(unit, "°") ? " " : "", unit);
+    } else {
+        windgust_str = g_strdup("");
+    }
+    g_free(value);
     DATA_AND_UNIT(pressure, PRESSURE);
     DATA_AND_UNIT(humidity, HUMIDITY);
     DATA_AND_UNIT(precipitation, PRECIPITATION);
@@ -2656,12 +2284,12 @@ weather_get_tooltip_text(const plugin_data *data)
                "<span size=\"medium\">(%s)</span>\n"
                "<b><span size=\"large\">%s</span></b>\n\n"
                "<b>Temperature:</b> %s\n"
-               "<b>Wind:</b> %s from %s\n"
+               "<b>Wind:</b> %s from %s%s\n"
                "<b>Pressure:</b> %s\n"
                "<b>Humidity:</b> %s\n"),
              data->location_name, alt,
              translate_desc(sym, data->night_time),
-             temp, windspeed, winddir, pressure, humidity);
+             temp, windspeed, winddir, windgust_str, pressure, humidity);
         break;
 
     case TOOLTIP_VERBOSE:
@@ -2683,7 +2311,7 @@ weather_get_tooltip_text(const plugin_data *data)
                "from %s to %s, with %s of precipitation</span>\n\n"
                "<b>Temperature:</b> %s\t\t"
                "<span size=\"smaller\">(values at %s)</span>\n"
-               "<b>Wind:</b> %s (%son the Beaufort scale) from %s(%s)\n"
+               "<b>Wind:</b> %s (%son the Beaufort scale) from %s(%s)%s\n"
                "<b>Pressure:</b> %s    <b>Humidity:</b> %s\n"
                "<b>Fog:</b> %s    <b>Cloudiness:</b> %s\n\n"
                "<span size=\"smaller\">%s</span>"),
@@ -2692,7 +2320,7 @@ weather_get_tooltip_text(const plugin_data *data)
              interval_start, interval_end,
              precipitation,
              temp, point,
-             windspeed, windbeau, winddir, winddeg,
+             windspeed, windbeau, winddir, winddeg, windgust_str,
              pressure, humidity,
              fog, cloudiness,
              sunval);
@@ -2709,6 +2337,7 @@ weather_get_tooltip_text(const plugin_data *data)
     g_free(windbeau);
     g_free(winddir);
     g_free(winddeg);
+    g_free(windgust_str);
     g_free(pressure);
     g_free(humidity);
     g_free(precipitation);

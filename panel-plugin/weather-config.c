@@ -564,30 +564,6 @@ cb_waqi_key_changed(GtkWidget *entry,
 
 
 static void
-cb_data_source_changed(GtkWidget *combo,
-                       gpointer user_data)
-{
-    xfceweather_dialog *dialog = (xfceweather_dialog *) user_data;
-    data_source_type new_source = gtk_combo_box_get_active(GTK_COMBO_BOX(combo));
-    if (dialog->pd->data_source != new_source) {
-        dialog->pd->data_source = new_source;
-        /* clear cached EC station so it gets re-detected */
-        g_free(dialog->pd->ec_province);
-        dialog->pd->ec_province = NULL;
-        g_free(dialog->pd->ec_station_id);
-        dialog->pd->ec_station_id = NULL;
-        /* clear all cached weather data so stale data from the old source
-         * does not persist while the new source is loading */
-        if (dialog->pd->weatherdata) {
-            xml_weather_free(dialog->pd->weatherdata);
-            dialog->pd->weatherdata = make_weather_data();
-        }
-        schedule_delayed_data_update(dialog);
-    }
-}
-
-
-static void
 create_location_page(xfceweather_dialog *dialog)
 {
     GtkWidget *button_loc_change;
@@ -632,27 +608,6 @@ create_location_page(xfceweather_dialog *dialog)
                            dialog->pd->timezone);
     else
         gtk_entry_set_text(GTK_ENTRY(dialog->text_timezone), "");
-
-    /* data source */
-    {
-        GtkWidget *grid = GTK_WIDGET(gtk_builder_get_object(GTK_BUILDER(dialog->builder), "grid1"));
-        GtkWidget *lbl = gtk_label_new_with_mnemonic(_("_Data source:"));
-        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        dialog->combo_data_source = gtk_combo_box_text_new();
-        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dialog->combo_data_source),
-                                       _("met.no (international)"));
-        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dialog->combo_data_source),
-                                       _("Environment Canada (Canada)"));
-        gtk_label_set_mnemonic_widget(GTK_LABEL(lbl), dialog->combo_data_source);
-        gtk_widget_show(lbl);
-        gtk_widget_show(dialog->combo_data_source);
-        gtk_grid_attach(GTK_GRID(grid), lbl, 0, 6, 1, 1);
-        gtk_grid_attach(GTK_GRID(grid), dialog->combo_data_source, 1, 6, 1, 1);
-        gtk_combo_box_set_active(GTK_COMBO_BOX(dialog->combo_data_source),
-                                 dialog->pd->data_source);
-        g_signal_connect(G_OBJECT(dialog->combo_data_source), "changed",
-                         G_CALLBACK(cb_data_source_changed), dialog);
-    }
 
     /* WAQI API key */
     {
@@ -1472,8 +1427,8 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
                  "severe thunderstorms. The dew point allows the prediction "
                  "of dew, frost, fog and minimum overnight temperature, and "
                  "has influence on the comfort level one experiences.\n\n"
-                 "<b>Note:</b> This is a calculated value not provided by "
-                 "met.no.");
+                 "<b>Note:</b> This is a calculated value not directly "
+                 "provided by Environment Canada.");
         break;
     case APPARENT_TEMPERATURE:
         text = _("Also known as <i>felt temperature</i>, <i>effective "
@@ -1484,10 +1439,9 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
                  "subjective value, apparent temperature can actually be "
                  "useful for warning about extreme conditions (cold, "
                  "heat).\n\n"
-                 "<b>Note:</b> This is a calculated value not provided by "
-                 "met.no. You should use a calculation model appropriate for "
-                 "your local climate and personal preferences on the units "
-                 "page.");
+                 "<b>Note:</b> This is a calculated value. You should use a "
+                 "calculation model appropriate for your local climate and "
+                 "personal preferences on the units page.");
         break;
     case CLOUDS_LOW:
         text = _("This gives the low-level cloud cover in percent. According "
@@ -1543,7 +1497,7 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
         text = _("The amount of rain, drizzle, sleet, hail, snow, graupel "
                  "and other forms of water falling from the sky over a "
                  "specific period.\n\n"
-                 "The values reported by met.no are those of precipitation "
+                 "The values reported are those of precipitation "
                  "in the liquid state - or in other words: of rain -, so if "
                  "snow is expected (but not sleet), then the amount of snow "
                  "will be <i>guessed</i> by multiplying the original value by "

@@ -407,6 +407,26 @@ get_data(const xml_time *timeslice,
     case WIND_DIRECTION_DEG:
         return LOCALE_DOUBLE(loc->wind_dir_deg, ROUND_TO_INT("%.1f"));
 
+    case WIND_GUST:        /* source is in m/s */
+        if (!loc->wind_gust_mps)
+            return g_strdup("");
+        val = string_to_double(loc->wind_gust_mps, 0);
+        switch (units->windspeed) {
+        case KMH:
+            val *= 3.6;
+            break;
+        case MPH:
+            val *= 2.2369362920544;
+            break;
+        case FTS:
+            val *= 3.2808399;
+            break;
+        case KNOTS:
+            val *= 1.9438445;
+            break;
+        }
+        return g_strdup_printf(ROUND_TO_INT("%.1f"), val);
+
     case HUMIDITY:
         return LOCALE_DOUBLE(loc->humidity_value, ROUND_TO_INT("%.1f"));
 
@@ -517,6 +537,7 @@ get_unit(const units_config *units,
         }
         break;
     case WIND_SPEED:
+    case WIND_GUST:
         switch (units->windspeed) {
         case KMH:
             return _("km/h");
@@ -646,6 +667,12 @@ calculate_symbol(xml_time *timeslice,
         return;
 
     loc = timeslice->location;
+
+    /* EC-sourced timeslices use "EC:NN" symbol strings; the icon code and
+       symbol_id already reflect the authoritative EC condition, so skip
+       cloudiness/fog overrides and leave the symbol string intact. */
+    if (loc->symbol && g_str_has_prefix(loc->symbol, "EC:"))
+        return;
 
     precipitation = string_to_double(loc->precipitation_value, 0);
     if (precipitation > 0)
@@ -802,6 +829,7 @@ make_combined_timeslice(xml_weather *wd,
 
     INTERPOLATE_OR_COPY(wind_speed_mps, FALSE);
     INTERPOLATE_OR_COPY(wind_speed_beaufort, FALSE);
+    INTERPOLATE_OR_COPY(wind_gust_mps, FALSE);
     INTERPOLATE_OR_COPY(humidity_value, FALSE);
     COMB_END_COPY(humidity_unit);
 

@@ -50,6 +50,7 @@ typedef struct {
     gchar *wind_dir_name;
     gchar *wind_speed_mps;
     gchar *wind_speed_beaufort;
+    gchar *wind_gust_mps;
 
     gchar *humidity_value;
     gchar *humidity_unit;

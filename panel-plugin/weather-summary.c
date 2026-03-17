@@ -583,6 +583,16 @@ create_summary_tab(plugin_data *data)
     g_free(wind);
     APPEND_TEXT_ITEM_REAL(value);
 
+    /* wind gust */
+    rawvalue = get_data(conditions, data->units, WIND_GUST,
+                        FALSE, data->night_time);
+    if (rawvalue && *rawvalue) {
+        value = g_strdup_printf(_("\tGusts: %s %s\n"),
+                                rawvalue, get_unit(data->units, WIND_GUST));
+        APPEND_TEXT_ITEM_REAL(value);
+    }
+    g_free(rawvalue);
+
     /* precipitation */
     APPEND_BTEXT(_("\nPrecipitation\n"));
     APPEND_TEXT_ITEM(_("Precipitation amount"), PRECIPITATION);
@@ -961,11 +971,10 @@ add_forecast_cell(plugin_data *data,
     rawvalue = get_data(fcdata, data->units, SYMBOL,
                         FALSE, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
-    if (rawvalue && g_str_has_prefix(rawvalue, "EC:"))
-        icon = ec_get_icon(atoi(rawvalue + 3), 48, scale_factor);
-    else
-        icon = get_icon(data->icon_theme, rawvalue, 48, scale_factor,
-                        (time_of_day == NIGHT));
+    /* Always use native EC icons */
+    icon = ec_get_icon(
+        (rawvalue && g_str_has_prefix(rawvalue, "EC:")) ? atoi(rawvalue + 3) : -1,
+        48, scale_factor);
     g_free(rawvalue);
     image = gtk_image_new_from_surface(icon);
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(image), TRUE, TRUE, 0);
@@ -1291,7 +1300,9 @@ create_summary_window(plugin_data *data)
     symbol = get_data(conditions, data->units, SYMBOL,
                       FALSE, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
-    icon = get_icon(data->icon_theme, symbol, 48, scale_factor, data->night_time);
+    icon = ec_get_icon(
+        (symbol && g_str_has_prefix(symbol, "EC:")) ? atoi(symbol + 3) : -1,
+        48, scale_factor);
     gtk_image_set_from_surface(GTK_IMAGE(image), icon);
     g_free(symbol);
 
@@ -1306,7 +1317,7 @@ create_summary_window(plugin_data *data)
         gtk_widget_set_valign (box, GTK_ALIGN_CENTER);
 
         gtk_widget_destroy (image);
-        icon = get_icon (data->icon_theme, NULL, 128, scale_factor, data->night_time);
+        icon = ec_get_icon(-1, 128, scale_factor);
         image = gtk_image_new ();
         gtk_image_set_from_surface (GTK_IMAGE (image), icon);
         if (G_LIKELY (icon))

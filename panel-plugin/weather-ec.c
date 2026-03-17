@@ -38,55 +38,55 @@ static gint
 ec_icon_to_symbol_id(gint code)
 {
     static const gint map[] = {
-        /* 0  */ SYMBOL_SUN,
-        /* 1  */ SYMBOL_LIGHTCLOUD,
-        /* 2  */ SYMBOL_PARTLYCLOUD,
-        /* 3  */ SYMBOL_PARTLYCLOUD,
-        /* 4  */ SYMBOL_CLOUD,
-        /* 5  */ SYMBOL_CLOUD,
-        /* 6  */ SYMBOL_CLOUD,
-        /* 7  */ SYMBOL_LIGHTRAINSUN,
-        /* 8  */ SYMBOL_LIGHTRAINSUN,
-        /* 9  */ SYMBOL_RAIN,
-        /* 10 */ SYMBOL_LIGHTRAINTHUNDERSUN,
-        /* 11 */ SYMBOL_RAINTHUNDER,
-        /* 12 */ SYMBOL_SLEET,
-        /* 13 */ SYMBOL_SNOWSUN,
-        /* 14 */ SYMBOL_SLEETSUN,
-        /* 15 */ SYMBOL_SNOWSUN,
-        /* 16 */ SYMBOL_SNOW,
-        /* 17 */ SYMBOL_LIGHTRAIN,
-        /* 18 */ SYMBOL_LIGHTRAIN,
-        /* 19 */ SYMBOL_RAIN,
-        /* 20 */ SYMBOL_RAIN,
-        /* 21 */ SYMBOL_SLEET,
-        /* 22 */ SYMBOL_SLEET,
-        /* 23 */ SYMBOL_SNOW,
-        /* 24 */ SYMBOL_SNOW,
-        /* 25 */ SYMBOL_SNOW,
-        /* 26 */ SYMBOL_SNOW,
-        /* 27 */ SYMBOL_SNOW,
-        /* 28 */ SYMBOL_FOG,
-        /* 29 */ SYMBOL_FOG,
-        /* 30 */ SYMBOL_FOG,
-        /* 31 */ SYMBOL_FOG,
-        /* 32 */ SYMBOL_FOG,
-        /* 33 */ SYMBOL_SUN,
-        /* 34 */ SYMBOL_LIGHTCLOUD,
-        /* 35 */ SYMBOL_PARTLYCLOUD,
-        /* 36 */ SYMBOL_CLOUD,
-        /* 37 */ SYMBOL_LIGHTRAINSUN,
-        /* 38 */ SYMBOL_SNOWSUN,
-        /* 39 */ SYMBOL_SLEETSUN,
-        /* 40 */ SYMBOL_CLOUD,
-        /* 41 */ SYMBOL_RAINTHUNDER,
-        /* 42 */ SYMBOL_RAINTHUNDER,
-        /* 43 */ SYMBOL_RAINTHUNDER,
-        /* 44 */ SYMBOL_RAINTHUNDER,
-        /* 45 */ SYMBOL_SLEET,
-        /* 46 */ SYMBOL_SLEET,
-        /* 47 */ SYMBOL_LIGHTRAIN,
-        /* 48 */ SYMBOL_SLEET,
+        /* 0  */ SYMBOL_SUN,              /* Sunny */
+        /* 1  */ SYMBOL_LIGHTCLOUD,       /* A few clouds */
+        /* 2  */ SYMBOL_PARTLYCLOUD,      /* Partly cloudy */
+        /* 3  */ SYMBOL_PARTLYCLOUD,      /* Mainly cloudy */
+        /* 4  */ SYMBOL_CLOUD,            /* Overcast */
+        /* 5  */ SYMBOL_LIGHTRAINSUN,     /* Chance of showers */
+        /* 6  */ SYMBOL_SNOWSUN,          /* Chance of flurries */
+        /* 7  */ SYMBOL_LIGHTRAINSUN,     /* Chance of rain */
+        /* 8  */ SYMBOL_LIGHTRAINSUN,     /* Chance of drizzle */
+        /* 9  */ SYMBOL_SLEET,            /* Chance of freezing drizzle */
+        /* 10 */ SYMBOL_SLEET,            /* Chance of freezing rain */
+        /* 11 */ SYMBOL_SLEET,            /* Chance of mixed rain and snow */
+        /* 12 */ SYMBOL_LIGHTRAINTHUNDERSUN, /* Chance of thunderstorms */
+        /* 13 */ SYMBOL_SLEET,            /* Chance of wintry mix */
+        /* 14 */ SYMBOL_LIGHTRAIN,        /* Drizzle */
+        /* 15 */ SYMBOL_SLEET,            /* Freezing drizzle */
+        /* 16 */ SYMBOL_SLEET,            /* Freezing rain */
+        /* 17 */ SYMBOL_SLEET,            /* Rain and snow / wintry mix */
+        /* 18 */ SYMBOL_LIGHTRAIN,        /* Rain shower */
+        /* 19 */ SYMBOL_RAIN,             /* Rain */
+        /* 20 */ SYMBOL_RAIN,             /* Heavy rain */
+        /* 21 */ SYMBOL_RAIN,             /* Periods of rain */
+        /* 22 */ SYMBOL_RAINTHUNDER,      /* Thunderstorm */
+        /* 23 */ SYMBOL_SNOW,             /* Snow */
+        /* 24 */ SYMBOL_SNOW,             /* Snow */
+        /* 25 */ SYMBOL_SNOW,             /* Periods of snow / blowing snow */
+        /* 26 */ SYMBOL_SNOW,             /* Heavy snow */
+        /* 27 */ SYMBOL_SNOW,             /* Blizzard */
+        /* 28 */ SYMBOL_FOG,              /* Fog */
+        /* 29 */ SYMBOL_FOG,              /* Fog / Haze */
+        /* 30 */ SYMBOL_SUN,              /* Clear (night) */
+        /* 31 */ SYMBOL_LIGHTCLOUD,       /* A few clouds (night) */
+        /* 32 */ SYMBOL_PARTLYCLOUD,      /* Partly cloudy (night) */
+        /* 33 */ SYMBOL_CLOUD,            /* Mainly cloudy (night) */
+        /* 34 */ SYMBOL_LIGHTRAINSUN,     /* Chance of showers (night) */
+        /* 35 */ SYMBOL_SNOWSUN,          /* Chance of flurries (night) */
+        /* 36 */ SYMBOL_LIGHTRAIN,        /* Chance of rain (night) */
+        /* 37 */ SYMBOL_LIGHTRAIN,        /* Chance of drizzle (night) */
+        /* 38 */ SYMBOL_SLEET,            /* Chance of freezing drizzle (night) */
+        /* 39 */ SYMBOL_SLEET,            /* Chance of freezing rain (night) */
+        /* 40 */ SYMBOL_SLEET,            /* Chance of mixed rain and snow (night) */
+        /* 41 */ SYMBOL_SNOW,             /* Snow / flurries (night) */
+        /* 42 */ SYMBOL_SNOW,             /* Blowing snow (night) */
+        /* 43 */ SYMBOL_SLEET,            /* Ice pellets (night) */
+        /* 44 */ SYMBOL_FOG,              /* Fog (night) */
+        /* 45 */ SYMBOL_FOG,              /* Haze (night) */
+        /* 46 */ SYMBOL_SLEET,            /* Ice pellets / freezing rain (night) */
+        /* 47 */ SYMBOL_LIGHTRAIN,        /* Light rain (night) */
+        /* 48 */ SYMBOL_SLEET,            /* Wintry mix (night) */
     };
     if (code < 0 || code >= (gint) G_N_ELEMENTS(map))
         return SYMBOL_NODATA;
@@ -114,7 +114,7 @@ mps_to_beaufort(gdouble mps)
 }
 
 
-/* Parse EC timestamp "YYYYMMDDHHmmss" as UTC */
+/* Parse EC timestamp "YYYYMMDDHHmmss" (14-char) or "YYYYMMDDHHMM" (12-char) as UTC */
 static time_t
 ec_parse_timestamp(const gchar *ts)
 {
@@ -122,10 +122,14 @@ ec_parse_timestamp(const gchar *ts)
     time_t result = 0;
     int y, mo, d, h, mi, s;
 
-    if (!ts || strlen(ts) < 14)
+    if (!ts || strlen(ts) < 12)
         return time(NULL);
 
-    sscanf(ts, "%4d%2d%2d%2d%2d%2d", &y, &mo, &d, &h, &mi, &s);
+    s = 0;
+    if (strlen(ts) >= 14)
+        sscanf(ts, "%4d%2d%2d%2d%2d%2d", &y, &mo, &d, &h, &mi, &s);
+    else
+        sscanf(ts, "%4d%2d%2d%2d%2d", &y, &mo, &d, &h, &mi);
     dt = g_date_time_new_utc(y, mo, d, h, mi, (gdouble) s);
     if (dt) {
         result = g_date_time_to_unix(dt);
@@ -312,7 +316,8 @@ ec_find_xml_url_in_dirlist(const gchar *html, const gchar *dir_url,
 
 
 gboolean
-ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
+ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
+                 time_t *obs_time_out)
 {
     xmlDoc *doc;
     xmlNode *root, *cur, *child;
@@ -324,6 +329,7 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
     gdouble pressure_kpa = 0.0;
     gdouble humidity = 0.0;
     gdouble wind_kmh = 0.0;
+    gdouble wind_gust_kmh = 0.0;
     gdouble wind_bearing = 0.0;
     gchar  *wind_dir_name = NULL;
     gint    icon_code = -1;
@@ -439,6 +445,12 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
                             wind_dir_name = g_strdup((const gchar *) content);
                             xmlFree(content);
                         }
+                    } else if (xmlStrcmp(wn->name, (const xmlChar *) "gust") == 0) {
+                        content = xmlNodeGetContent(wn);
+                        if (content) {
+                            wind_gust_kmh = g_ascii_strtod((const gchar *) content, NULL);
+                            xmlFree(content);
+                        }
                     } else if (xmlStrcmp(wn->name, (const xmlChar *) "bearing") == 0) {
                         content = xmlNodeGetContent(wn);
                         if (content) {
@@ -475,7 +487,12 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
     }
 
     obs_time = ec_parse_timestamp(timestamp_str);
+    weather_debug("EC obs_time from XML: %s (parsed: %ld)",
+                  timestamp_str ? timestamp_str : "(null)", (long) obs_time);
     g_free(timestamp_str);
+
+    if (obs_time_out)
+        *obs_time_out = obs_time;
 
     wind_mps = wind_kmh / 3.6;
     beaufort = mps_to_beaufort(wind_mps);
@@ -522,6 +539,8 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
         if (wind_dir_name)
             loc1->wind_dir_name   = g_strdup(wind_dir_name);
         loc1->wind_dir_deg        = g_strdup_printf("%.1f", wind_bearing);
+        if (wind_gust_kmh > 0)
+            loc1->wind_gust_mps   = g_strdup_printf("%.1f", wind_gust_kmh / 3.6);
     }
 
     /* dewpoint */
@@ -578,6 +597,8 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd)
         if (wind_dir_name)
             loc2->wind_dir_name   = g_strdup(wind_dir_name);
         loc2->wind_dir_deg        = g_strdup_printf("%.1f", wind_bearing);
+        if (wind_gust_kmh > 0)
+            loc2->wind_gust_mps   = g_strdup_printf("%.1f", wind_gust_kmh / 3.6);
     }
 
     merge_timeslice(wd, point2);
@@ -1224,7 +1245,7 @@ ec_get_icon(gint icon_code, gint size, gint scale)
     if (icon_code < 0)
         return NULL;
 
-    px   = size * scale;
+    px   = MAX(size * scale, 1);
     path = g_strdup_printf(PACKAGE_DATADIR "/ec-icons/%02d.png", icon_code);
     pb   = gdk_pixbuf_new_from_file_at_scale(path, px, px, TRUE, NULL);
     g_free(path);

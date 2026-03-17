@@ -32,11 +32,11 @@ plugin_sources += gnome.compile_resources(
 plugin_install_subdir = 'xfce4' / 'panel' / 'plugins'
 
 plugin_lib = shared_module(
-  'weather',
+  'weather-ec',
   plugin_sources,
   gnu_symbol_visibility: 'hidden',
   c_args: [
-    '-DG_LOG_DOMAIN="@0@"'.format('xfce4-weather-plugin'),
+    '-DG_LOG_DOMAIN="@0@"'.format('xfce4-weather-plugin-ec'),
     '-DTHEMESDIR="@0@"'.format(pkgdatadir / 'icons'),
     '-DGEONAMES_USERNAME="@0@"'.format(get_option('geonames-username')),
   ],
@@ -61,8 +61,8 @@ plugin_lib = shared_module(
 )
 
 i18n.merge_file(
-  input: 'weather.desktop.in',
-  output: 'weather.desktop',
+  input: 'weather-ec.desktop.in',
+  output: 'weather-ec.desktop',
   po_dir: '..' / 'po',
   type: 'desktop',
   install: true,

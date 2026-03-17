@@ -857,6 +857,7 @@ xml_location_free(xml_location *loc)
     g_free(loc->wind_dir_name);
     g_free(loc->wind_speed_mps);
     g_free(loc->wind_speed_beaufort);
+    g_free(loc->wind_gust_mps);
     g_free(loc->humidity_value);
     g_free(loc->humidity_unit);
     g_free(loc->pressure_value);
@@ -944,6 +945,7 @@ xml_time_copy(const xml_time *src)
     loc->wind_dir_name = g_strdup(src->location->wind_dir_name);
     loc->wind_speed_mps = g_strdup(src->location->wind_speed_mps);
     loc->wind_speed_beaufort = g_strdup(src->location->wind_speed_beaufort);
+    loc->wind_gust_mps = g_strdup(src->location->wind_gust_mps);
 
     loc->humidity_value = g_strdup(src->location->humidity_value);
     loc->humidity_unit = g_strdup(src->location->humidity_unit);

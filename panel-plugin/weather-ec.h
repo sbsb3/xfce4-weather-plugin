@@ -61,7 +61,8 @@ ec_station *ec_find_nearest_from_csv   (const gchar *csv_data, gsize len,
 gchar     *ec_find_xml_url_in_dirlist  (const gchar *html, const gchar *dir_url,
                                          const gchar *station_id);
 gboolean   ec_parse_weather            (const gchar *data, gsize len,
-                                         xml_weather *wd);
+                                         xml_weather *wd,
+                                         time_t *obs_time_out);
 gboolean   ec_parse_forecasts          (const gchar *data, gsize len,
                                          xml_weather *wd, time_t obs_time);
 GPtrArray *ec_parse_alerts             (const gchar *data, gsize len);

@@ -77,11 +77,6 @@ typedef enum {
 } tooltip_styles;
 
 typedef enum {
-    DATASOURCE_METNO = 0,
-    DATASOURCE_ENVCANADA
-} data_source_type;
-
-typedef enum {
     FC_LAYOUT_CALENDAR,
     FC_LAYOUT_LIST
 } forecast_layouts;
@@ -130,7 +125,6 @@ typedef struct {
     gboolean upower_lid_closed;
 #endif
     gboolean power_saving;
-    data_source_type data_source;
     gchar           *ec_province;
     gchar           *ec_station_id;
     GPtrArray       *ec_alerts;      /* GPtrArray of ec_alert* */
