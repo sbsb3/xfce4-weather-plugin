@@ -1217,7 +1217,7 @@ make_current_conditions(xml_weather *wd,
        interval, so look max three hours ahead */
     while (i < 3 && interval == NULL) {
         point_t = time_calc_hour(point_tm, i);
-        found = find_point_data(wd, point_t, 1, 4 * 3600);
+        found = find_point_data(wd, point_t, 0, 4 * 3600);
         interval = find_smallest_interval(wd, found);
         point_data_results_free(found);
 
