@@ -842,6 +842,29 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                     loc->wind_dir_name = g_strdup(h_wind_dir);
             }
 
+            /* EC hourly forecasts omit humidity and pressure; carry forward
+             * the most recent observed values so current-conditions always
+             * has something to display. */
+            {
+                xml_time *obs_pt = get_timeslice(wd, obs_time, obs_time, NULL);
+                if (obs_pt) {
+                    if (!loc->humidity_value &&
+                        obs_pt->location->humidity_value) {
+                        loc->humidity_value =
+                            g_strdup(obs_pt->location->humidity_value);
+                        loc->humidity_unit =
+                            g_strdup(obs_pt->location->humidity_unit);
+                    }
+                    if (!loc->pressure_value &&
+                        obs_pt->location->pressure_value) {
+                        loc->pressure_value =
+                            g_strdup(obs_pt->location->pressure_value);
+                        loc->pressure_unit =
+                            g_strdup(obs_pt->location->pressure_unit);
+                    }
+                }
+            }
+
             merge_timeslice(wd, pt);
             xml_time_free(pt);
             added = TRUE;
