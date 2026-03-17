@@ -2288,13 +2288,15 @@ weather_get_tooltip_text(const plugin_data *data)
              */
             (_("<b><span size=\"large\">%s</span></b> "
                "<span size=\"medium\">(%s)</span>\n"
-               "<b><span size=\"large\">%s</span></b>\n\n"
+               "<b><span size=\"large\">%s</span></b>\n"
+               "<b>Condition:</b> %s\n\n"
                "<b>Temperature:</b> %s\n"
                "<b>Wind:</b> %s from %s%s\n"
                "<b>Pressure:</b> %s\n"
                "<b>Humidity:</b> %s\n"),
              data->location_name, alt,
              translate_desc(sym, data->night_time),
+             conditions->location->condition ? conditions->location->condition : "",
              temp, windspeed, winddir, windgust_str, pressure, humidity);
         text = g_strconcat(base, aqi_lines, NULL);
         g_free(base);
@@ -2315,6 +2317,7 @@ weather_get_tooltip_text(const plugin_data *data)
             (_("<b><span size=\"large\">%s</span></b> "
                "<span size=\"medium\">(%s)</span>\n"
                "<b><span size=\"large\">%s</span></b>\n"
+               "<b>Condition:</b> %s\n"
                "<span size=\"smaller\">"
                "from %s to %s, with %s of precipitation</span>\n\n"
                "<b>Temperature:</b> %s\t\t"
@@ -2325,6 +2328,7 @@ weather_get_tooltip_text(const plugin_data *data)
                "<span size=\"smaller\">%s</span>"),
              data->location_name, alt,
              translate_desc(sym, data->night_time),
+             conditions->location->condition ? conditions->location->condition : "",
              interval_start, interval_end,
              precipitation,
              temp, point,

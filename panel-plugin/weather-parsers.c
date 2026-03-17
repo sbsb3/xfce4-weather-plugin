@@ -853,6 +853,7 @@ xml_location_free(xml_location *loc)
     g_free(loc->longitude);
     g_free(loc->temperature_value);
     g_free(loc->temperature_unit);
+    g_free(loc->condition);
     g_free(loc->windchill_value);
     g_free(loc->humidex_value);
     g_free(loc->wind_dir_deg);
@@ -942,6 +943,7 @@ xml_time_copy(const xml_time *src)
 
     loc->temperature_value = g_strdup(src->location->temperature_value);
     loc->temperature_unit = g_strdup(src->location->temperature_unit);
+    loc->condition = g_strdup(src->location->condition);
     loc->windchill_value = g_strdup(src->location->windchill_value);
     loc->humidex_value = g_strdup(src->location->humidex_value);
 

@@ -580,6 +580,9 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
         (void) dewpt_c; /* suppress unused warning */
     }
 
+    if (condition_str)
+        loc1->condition = g_strdup(condition_str);
+
     if (got_windchill)
         loc1->windchill_value = g_strdup_printf("%.1f", windchill_c);
 

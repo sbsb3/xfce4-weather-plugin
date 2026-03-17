@@ -828,6 +828,7 @@ make_combined_timeslice(xml_weather *wd,
     INTERPOLATE_OR_COPY(temperature_value, FALSE);
     COMB_END_COPY(temperature_unit);
 
+    COMB_END_COPY(condition);
     COMB_END_COPY(windchill_value);
     COMB_END_COPY(humidex_value);
 

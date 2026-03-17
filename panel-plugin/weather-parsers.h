@@ -46,6 +46,8 @@ typedef struct {
     gchar *temperature_value;
     gchar *temperature_unit;
 
+    gchar *condition;
+
     gchar *windchill_value;
     gchar *humidex_value;
 
