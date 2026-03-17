@@ -613,6 +613,9 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
     point2->point = obs_time + 7199;
     loc2 = point2->location;
 
+    if (condition_str)
+        loc2->condition = g_strdup(condition_str);
+
     if (got_temp)
         loc2->temperature_value = g_strdup_printf("%.1f", temp_c);
     loc2->temperature_unit = g_strdup("celsius");
