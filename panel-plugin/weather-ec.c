@@ -331,17 +331,21 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
     gdouble wind_kmh = 0.0;
     gdouble wind_gust_kmh = 0.0;
     gdouble wind_bearing = 0.0;
+    gdouble windchill_c = 0.0;
+    gdouble humidex_val = 0.0;
     gchar  *wind_dir_name = NULL;
     gint    icon_code = -1;
     gchar  *condition_str = NULL;
     gchar  *timestamp_str = NULL;
     time_t  obs_time;
 
-    gboolean got_temp     = FALSE;
-    gboolean got_dewpt    = FALSE;
-    gboolean got_pressure = FALSE;
-    gboolean got_humidity = FALSE;
-    gboolean got_wind     = FALSE;
+    gboolean got_temp      = FALSE;
+    gboolean got_dewpt     = FALSE;
+    gboolean got_pressure  = FALSE;
+    gboolean got_humidity  = FALSE;
+    gboolean got_wind      = FALSE;
+    gboolean got_windchill = FALSE;
+    gboolean got_humidex   = FALSE;
 
     xml_time     *point1, *point2, *interval;
     xml_location *loc1,   *loc2,   *loci;
@@ -472,6 +476,26 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
                     condition_str = g_strdup((const gchar *) content);
                     xmlFree(content);
                 }
+            } else if (xmlStrcmp(child->name, (const xmlChar *) "windChill") == 0) {
+                content = xmlNodeGetContent(child);
+                if (content) {
+                    const gchar *s = (const gchar *) content;
+                    if (*s != '\0') {
+                        windchill_c = g_ascii_strtod(s, NULL);
+                        got_windchill = TRUE;
+                    }
+                    xmlFree(content);
+                }
+            } else if (xmlStrcmp(child->name, (const xmlChar *) "humidex") == 0) {
+                content = xmlNodeGetContent(child);
+                if (content) {
+                    const gchar *s = (const gchar *) content;
+                    if (*s != '\0') {
+                        humidex_val = g_ascii_strtod(s, NULL);
+                        got_humidex = TRUE;
+                    }
+                    xmlFree(content);
+                }
             }
         }
         break; /* only process first currentConditions */
@@ -555,6 +579,12 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
            So we only need temp and humidity, which we already set. */
         (void) dewpt_c; /* suppress unused warning */
     }
+
+    if (got_windchill)
+        loc1->windchill_value = g_strdup_printf("%.1f", windchill_c);
+
+    if (got_humidex)
+        loc1->humidex_value = g_strdup_printf("%.1f", humidex_val);
 
     merge_timeslice(wd, point1);
     xml_time_free(point1);

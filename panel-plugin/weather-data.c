@@ -441,8 +441,13 @@ get_data(const xml_time *timeslice,
         return g_strdup_printf(ROUND_TO_INT("%.1f"), val);
 
     case APPARENT_TEMPERATURE:
-        val = calc_apparent_temperature(loc, units->apparent_temperature,
-                                        night_time);
+        if (loc->windchill_value != NULL)
+            val = string_to_double(loc->windchill_value, 0);
+        else if (loc->humidex_value != NULL)
+            val = string_to_double(loc->humidex_value, 0);
+        else
+            val = calc_apparent_temperature(loc, units->apparent_temperature,
+                                            night_time);
         if (units->temperature == FAHRENHEIT)
             CALC_FAHRENHEIT(round, val);
         else
