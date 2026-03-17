@@ -828,9 +828,19 @@ make_combined_timeslice(xml_weather *wd,
     INTERPOLATE_OR_COPY(temperature_value, FALSE);
     COMB_END_COPY(temperature_unit);
 
+    COMB_END_COPY(windchill_value);
+    COMB_END_COPY(humidex_value);
+
     INTERPOLATE_OR_COPY(wind_dir_deg, TRUE);
-    comb->location->wind_dir_name =
-        g_strdup(wind_dir_name_by_deg(comb->location->wind_dir_deg, FALSE));
+    {
+        const gchar *derived =
+            wind_dir_name_by_deg(comb->location->wind_dir_deg, FALSE);
+        if (derived && *derived)
+            comb->location->wind_dir_name = g_strdup(derived);
+        else
+            comb->location->wind_dir_name =
+                g_strdup(end->location->wind_dir_name);
+    }
 
     INTERPOLATE_OR_COPY(wind_speed_mps, FALSE);
     INTERPOLATE_OR_COPY(wind_speed_beaufort, FALSE);

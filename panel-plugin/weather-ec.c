@@ -590,21 +590,24 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
     xml_time_free(point1);
 
     /* --- Point timeslice 2: anchor for the interval end.
-     * Placed 1 second before the next full hour (obs_time+3599) so it
+     * Placed 2 hours - 1 second after obs_time (obs_time+7199) so it
+     * stays in the find_point_data "after" bucket for up to ~2 hours.
+     * Without this, once now_t passes obs_time+3599 the anchor falls
+     * into "before" and find_smallest_interval can no longer pair it
+     * with point1 to locate the observation interval — it then falls
+     * back to the next hourly forecast interval instead.
+     * The value is obs_time+7199 rather than obs_time+7200 so it
      * cannot be overwritten by an hourly forecast entry that always
-     * lands on an exact hour boundary.  Keeping the anchor's temperature
-     * equal to the observation prevents make_combined_timeslice from
-     * interpolating toward a future forecast value while the observed
-     * conditions are still current. --- */
+     * lands on an exact hour boundary. --- */
     point2 = make_timeslice();
     if (!point2) {
         g_free(wind_dir_name);
         g_free(condition_str);
         return TRUE; /* partial success */
     }
-    point2->start = obs_time + 3599;
-    point2->end   = obs_time + 3599;
-    point2->point = obs_time + 3599;
+    point2->start = obs_time + 7199;
+    point2->end   = obs_time + 7199;
+    point2->point = obs_time + 7199;
     loc2 = point2->location;
 
     if (got_temp)
@@ -634,7 +637,7 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
     merge_timeslice(wd, point2);
     xml_time_free(point2);
 
-    /* --- Interval timeslice: obs_time to obs_time+3600 --- */
+    /* --- Interval timeslice: obs_time to obs_time+7199 --- */
     interval = make_timeslice();
     if (!interval) {
         g_free(wind_dir_name);
@@ -642,7 +645,7 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
         return TRUE; /* partial success */
     }
     interval->start = obs_time;
-    interval->end   = obs_time + 3599;
+    interval->end   = obs_time + 7199;
     interval->point = obs_time;
     loci = interval->location;
 
