@@ -866,6 +866,27 @@ make_combined_timeslice(xml_weather *wd,
     comb->location->symbol_id = interval->location->symbol_id;
     comb->location->symbol = g_strdup(interval->location->symbol);
 
+    /* When the selected interval is the EC observation interval (wider than
+       1 hour), its icon may be stale. Override with the nearest hourly
+       forecast interval's icon instead. */
+    if (current_conditions && between_t &&
+        difftime(interval->end, interval->start) > 3600) {
+        time_t t = *between_t;
+        time_t hour_start = (t / 3600) * 3600;
+        xml_time *fc = NULL;
+        gint h;
+        for (h = 0; h < 4 && fc == NULL; h++) {
+            fc = get_timeslice(wd, hour_start + h * 3600,
+                               hour_start + (h + 1) * 3600, NULL);
+        }
+        if (fc && fc->location->symbol &&
+            g_str_has_prefix(fc->location->symbol, "EC:")) {
+            g_free(comb->location->symbol);
+            comb->location->symbol = g_strdup(fc->location->symbol);
+            comb->location->symbol_id = fc->location->symbol_id;
+        }
+    }
+
     /* Ensure observation condition text is available when the forecast
        interval's end point has no condition (forecast points don't carry
        condition text, only observation points do). */
