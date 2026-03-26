@@ -83,6 +83,13 @@ typedef struct {
 typedef struct {
     GArray *timeslices;
     xml_time *current_conditions;
+
+    /* Most recent EC observation icon/condition, used to override
+       forecast icons when showing current conditions. */
+    gint obs_icon_code;     /* EC icon code, or -1 if unavailable */
+    gint obs_symbol_id;
+    time_t obs_time;
+    gchar *obs_condition;
 } xml_weather;
 
 typedef struct {

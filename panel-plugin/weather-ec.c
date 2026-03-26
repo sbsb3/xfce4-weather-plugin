@@ -522,6 +522,15 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
     beaufort = mps_to_beaufort(wind_mps);
     symbol_id = (icon_code >= 0) ? ec_icon_to_symbol_id(icon_code) : SYMBOL_NODATA;
 
+    /* Store observation icon/condition on xml_weather so current-conditions
+       can use the observation icon even after the observation interval
+       expires and a forecast interval is selected instead. */
+    wd->obs_icon_code = icon_code;
+    wd->obs_symbol_id = symbol_id;
+    wd->obs_time = obs_time;
+    g_free(wd->obs_condition);
+    wd->obs_condition = g_strdup(condition_str);
+
     /* --- Point timeslice 1: obs_time --- */
     point1 = make_timeslice();
     if (!point1) {

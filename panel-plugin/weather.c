@@ -1593,6 +1593,16 @@ write_cache_file(plugin_data *data)
     CACHE_APPEND("cache_date=%s\n\n", now);
     g_free(now);
 
+    /* observation icon/condition for current-conditions display */
+    g_string_append_printf(out, "obs_icon_code=%d\n", wd->obs_icon_code);
+    g_string_append_printf(out, "obs_symbol_id=%d\n", wd->obs_symbol_id);
+    if (wd->obs_time) {
+        value = format_date(wd->obs_time, date_format, FALSE);
+        CACHE_APPEND("obs_time=%s\n", value);
+        g_free(value);
+    }
+    CACHE_APPEND("obs_condition=%s\n\n", wd->obs_condition ? wd->obs_condition : "");
+
     if (data->astrodata) {
         for (i = 0; i < data->astrodata->len; i++) {
             astro = g_array_index(data->astrodata, xml_astro *, i);
@@ -1772,6 +1782,27 @@ read_cache_file(plugin_data *data)
             calc_next_download_time(data->astro_update,
                                     data->astro_update->last);
         g_free(timestring);
+    }
+
+    /* restore observation icon/condition */
+    if (g_key_file_has_key(keyfile, "info", "obs_icon_code", NULL))
+        data->weatherdata->obs_icon_code =
+            g_key_file_get_integer(keyfile, "info", "obs_icon_code", NULL);
+    if (g_key_file_has_key(keyfile, "info", "obs_symbol_id", NULL))
+        data->weatherdata->obs_symbol_id =
+            g_key_file_get_integer(keyfile, "info", "obs_symbol_id", NULL);
+    if (g_key_file_has_key(keyfile, "info", "obs_time", NULL)) {
+        CACHE_READ_STRING(timestring, "obs_time");
+        data->weatherdata->obs_time = parse_timestring(timestring, NULL, FALSE);
+        g_free(timestring);
+    }
+    if (g_key_file_has_key(keyfile, "info", "obs_condition", NULL)) {
+        gchar *cond = g_key_file_get_string(keyfile, "info", "obs_condition", NULL);
+        if (cond && cond[0]) {
+            g_free(data->weatherdata->obs_condition);
+            data->weatherdata->obs_condition = cond;
+        } else
+            g_free(cond);
     }
 
     /* read cached astrodata if available and up-to-date */

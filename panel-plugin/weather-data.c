@@ -866,6 +866,26 @@ make_combined_timeslice(xml_weather *wd,
     comb->location->symbol_id = interval->location->symbol_id;
     comb->location->symbol = g_strdup(interval->location->symbol);
 
+    /* When displaying current conditions and the observation interval has
+       expired, a forecast interval is used instead.  The forecast icon may
+       not match the actual observed conditions (e.g. forecast says "clear"
+       while observation says "light snow").  Prefer the observation's icon
+       when it is recent enough (< 4 hours old). */
+    if (current_conditions && wd->obs_icon_code >= 0 &&
+        difftime(time(NULL), wd->obs_time) < 4 * 3600) {
+        g_free(comb->location->symbol);
+        comb->location->symbol =
+            g_strdup_printf("EC:%02d", wd->obs_icon_code);
+        comb->location->symbol_id = wd->obs_symbol_id;
+    }
+
+    /* Also ensure observation condition text is available */
+    if (current_conditions && !comb->location->condition &&
+        wd->obs_condition && wd->obs_condition[0] &&
+        difftime(time(NULL), wd->obs_time) < 4 * 3600) {
+        comb->location->condition = g_strdup(wd->obs_condition);
+    }
+
     calculate_symbol(comb, current_conditions);
     return comb;
 }

@@ -308,6 +308,7 @@ make_weather_data(void)
         g_slice_free(xml_weather, wd);
         return NULL;
     }
+    wd->obs_icon_code = -1;
     return wd;
 }
 
@@ -1009,6 +1010,7 @@ xml_weather_free(xml_weather *wd)
         weather_debug("Freeing current conditions.");
         xml_time_free(wd->current_conditions);
     }
+    g_free(wd->obs_condition);
     g_slice_free(xml_weather, wd);
 }
 
