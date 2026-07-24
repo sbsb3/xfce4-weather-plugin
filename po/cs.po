@@ -826,7 +826,7 @@ msgid ""
 "<i>anemos</i>, meaning <i>wind</i>) in 10 m (33 ft) height. Anemometers "
 "usually measure either wind speed or pressure, but will provide both values "
 "as they are closely related to and can be deduced from each other."
-msgstr "V součanosti se rychlost větru měří anemometrem (z řeckého <i>anemos<i>, vítr) ve výšce 10 metrů (33 stop). Anemometry obvykle měří rychlost větru nebo tlak, ale poskytnou obě hodnoty, protože spolu úzce souvisí a lze je mezi sebou vzájemně odvodit."
+msgstr "V součanosti se rychlost větru měří anemometrem (z řeckého <i>anemos</i>, <i>vítr</i>) ve výšce 10 metrů (33 stop). Anemometry obvykle měří rychlost větru nebo tlak, ale poskytnou obě hodnoty, protože spolu úzce souvisejí a lze je vzájemně odvodit."
 
 #: panel-plugin/weather-config.c:1361
 msgid ""
