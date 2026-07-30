@@ -402,14 +402,15 @@ get_preferred_units(const gchar *country_code)
 
 
 static void
+cb_geolocation(
 #if SOUP_CHECK_VERSION(3, 0, 0)
-cb_geolocation(GObject *source,
-               GAsyncResult *result,
+    GObject *source,
+    GAsyncResult *result,
 #else
-cb_geolocation(SoupSession *session,
-               SoupMessage *msg,
+    SoupSession *session,
+    SoupMessage *msg,
 #endif
-               gpointer user_data)
+    gpointer user_data)
 {
     geolocation_data *data = (geolocation_data *) user_data;
     xml_geolocation *geo;
