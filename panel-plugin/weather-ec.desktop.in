@@ -1,0 +1,8 @@
+[Xfce Panel]
+Type=X-XFCE-PanelPlugin
+Name=Weather Update EC
+Comment=Show current weather conditions from Environment Canada
+Icon=org.xfce.panel.weather
+X-XFCE-Internal=FALSE
+X-XFCE-Module=weather-ec
+X-XFCE-API=2.0

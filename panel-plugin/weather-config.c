@@ -17,6 +17,7 @@
  */
 
 #include <string.h>
+#include <time.h>
 #include <libxfce4ui/libxfce4ui.h>
 
 #include "weather-parsers.h"
@@ -28,7 +29,7 @@
 #include "weather-scrollbox.h"
 
 #define UPDATE_TIMER_DELAY 7
-#define OPTIONS_N 15
+#define OPTIONS_N 17
 #define BORDER 4
 #define LOC_NAME_MAX_LEN 50
 #define TIMEZONE_MAX_LEN 40
@@ -104,6 +105,8 @@ static const labeloption labeloptions[OPTIONS_N] = {
     {N_("Cloudiness (C)"), CLOUDINESS},
     {N_("Fog (F)"), FOG},
     {N_("Precipitation (R)"), PRECIPITATION},
+    {N_("Air Quality Index - WAQI (AQI)"), AQI},
+    {N_("Air Quality Health Index - EC (AQHI)"), AQHI},
 };
 
 static xfceweather_dialog *global_dialog = NULL;
@@ -546,6 +549,20 @@ text_timezone_changed(const GtkWidget *entry,
 
 
 static void
+cb_waqi_key_changed(GtkWidget *entry,
+                    gpointer user_data)
+{
+    xfceweather_dialog *dialog = (xfceweather_dialog *) user_data;
+    const gchar *key = gtk_entry_get_text(GTK_ENTRY(entry));
+    g_free(dialog->pd->waqi_api_key);
+    dialog->pd->waqi_api_key = (key && key[0]) ? g_strdup(key) : NULL;
+    /* Reset update time so it fetches soon */
+    if (dialog->pd->waqi_update)
+        dialog->pd->waqi_update->next = time(NULL);
+}
+
+
+static void
 create_location_page(xfceweather_dialog *dialog)
 {
     GtkWidget *button_loc_change;
@@ -590,6 +607,27 @@ create_location_page(xfceweather_dialog *dialog)
                            dialog->pd->timezone);
     else
         gtk_entry_set_text(GTK_ENTRY(dialog->text_timezone), "");
+
+    /* WAQI API key */
+    {
+        GtkWidget *grid = GTK_WIDGET(gtk_builder_get_object(GTK_BUILDER(dialog->builder), "grid1"));
+        GtkWidget *lbl = gtk_label_new_with_mnemonic(_("_WAQI API key:"));
+        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+        dialog->text_waqi_key = gtk_entry_new();
+        gtk_entry_set_max_length(GTK_ENTRY(dialog->text_waqi_key), 64);
+        gtk_entry_set_placeholder_text(GTK_ENTRY(dialog->text_waqi_key),
+                                       _("Optional – get a free key at waqi.info"));
+        gtk_label_set_mnemonic_widget(GTK_LABEL(lbl), dialog->text_waqi_key);
+        if (dialog->pd->waqi_api_key)
+            gtk_entry_set_text(GTK_ENTRY(dialog->text_waqi_key),
+                               dialog->pd->waqi_api_key);
+        gtk_widget_show(lbl);
+        gtk_widget_show(dialog->text_waqi_key);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, 7, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), dialog->text_waqi_key, 1, 7, 1, 1);
+        g_signal_connect(G_OBJECT(dialog->text_waqi_key), "changed",
+                         G_CALLBACK(cb_waqi_key_changed), dialog);
+    }
 
     /* set up the altitude spin box and unit label (meters/feet) */
     setup_altitude(dialog);
@@ -1387,8 +1425,8 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
                  "severe thunderstorms. The dew point allows the prediction "
                  "of dew, frost, fog and minimum overnight temperature, and "
                  "has influence on the comfort level one experiences.\n\n"
-                 "<b>Note:</b> This is a calculated value not provided by "
-                 "met.no.");
+                 "<b>Note:</b> This is a calculated value not directly "
+                 "provided by Environment Canada.");
         break;
     case APPARENT_TEMPERATURE:
         text = _("Also known as <i>felt temperature</i>, <i>effective "
@@ -1399,10 +1437,9 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
                  "subjective value, apparent temperature can actually be "
                  "useful for warning about extreme conditions (cold, "
                  "heat).\n\n"
-                 "<b>Note:</b> This is a calculated value not provided by "
-                 "met.no. You should use a calculation model appropriate for "
-                 "your local climate and personal preferences on the units "
-                 "page.");
+                 "<b>Note:</b> This is a calculated value. You should use a "
+                 "calculation model appropriate for your local climate and "
+                 "personal preferences on the units page.");
         break;
     case CLOUDS_LOW:
         text = _("This gives the low-level cloud cover in percent. According "
@@ -1458,7 +1495,7 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
         text = _("The amount of rain, drizzle, sleet, hail, snow, graupel "
                  "and other forms of water falling from the sky over a "
                  "specific period.\n\n"
-                 "The values reported by met.no are those of precipitation "
+                 "The values reported are those of precipitation "
                  "in the liquid state - or in other words: of rain -, so if "
                  "snow is expected (but not sleet), then the amount of snow "
                  "will be <i>guessed</i> by multiplying the original value by "
@@ -1480,6 +1517,18 @@ options_datatypes_set_tooltip(GtkWidget *optmenu)
                  "and ground temperature. Because of that, these rules will "
                  "only lead to rough estimates and may not represent the "
                  "real amount of snow.");
+        break;
+    case AQI:
+        text = _("Air Quality Index from the World Air Quality Index project "
+                 "(waqi.info). Requires a free API key entered on the "
+                 "Location page. Values range from 0 (good) to 300+ "
+                 "(hazardous).");
+        break;
+    case AQHI:
+        text = _("Air Quality Health Index from Environment Canada. "
+                 "No API key required. Scale from 1 (low risk) to 10+ "
+                 "(very high risk), indicating the health risk posed by "
+                 "local air quality.");
         break;
     }
 

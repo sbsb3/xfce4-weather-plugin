@@ -144,3 +144,5 @@ xfce_revision_h = vcs_tag(
 subdir('panel-plugin')
 subdir('icons')
 subdir('po')
+
+install_subdir('ec-icons', install_dir: pkgdatadir)

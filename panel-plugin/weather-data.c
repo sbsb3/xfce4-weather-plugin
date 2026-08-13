@@ -407,6 +407,26 @@ get_data(const xml_time *timeslice,
     case WIND_DIRECTION_DEG:
         return LOCALE_DOUBLE(loc->wind_dir_deg, ROUND_TO_INT("%.1f"));
 
+    case WIND_GUST:        /* source is in m/s */
+        if (!loc->wind_gust_mps)
+            return g_strdup("");
+        val = string_to_double(loc->wind_gust_mps, 0);
+        switch (units->windspeed) {
+        case KMH:
+            val *= 3.6;
+            break;
+        case MPH:
+            val *= 2.2369362920544;
+            break;
+        case FTS:
+            val *= 3.2808399;
+            break;
+        case KNOTS:
+            val *= 1.9438445;
+            break;
+        }
+        return g_strdup_printf(ROUND_TO_INT("%.1f"), val);
+
     case HUMIDITY:
         return LOCALE_DOUBLE(loc->humidity_value, ROUND_TO_INT("%.1f"));
 
@@ -421,8 +441,13 @@ get_data(const xml_time *timeslice,
         return g_strdup_printf(ROUND_TO_INT("%.1f"), val);
 
     case APPARENT_TEMPERATURE:
-        val = calc_apparent_temperature(loc, units->apparent_temperature,
-                                        night_time);
+        if (loc->windchill_value != NULL)
+            val = string_to_double(loc->windchill_value, 0);
+        else if (loc->humidex_value != NULL)
+            val = string_to_double(loc->humidex_value, 0);
+        else
+            val = calc_apparent_temperature(loc, units->apparent_temperature,
+                                            night_time);
         if (units->temperature == FAHRENHEIT)
             CALC_FAHRENHEIT(round, val);
         else
@@ -479,6 +504,11 @@ get_data(const xml_time *timeslice,
 
     case SYMBOL:
         return CHK_NULL(loc->symbol);
+
+    case AQI:
+    case AQHI:
+        /* Not timeslice-based; handled directly in make_label() */
+        return g_strdup("");
     }
 
     return g_strdup("");
@@ -512,6 +542,7 @@ get_unit(const units_config *units,
         }
         break;
     case WIND_SPEED:
+    case WIND_GUST:
         switch (units->windspeed) {
         case KMH:
             return _("km/h");
@@ -545,6 +576,8 @@ get_unit(const units_config *units,
     case SYMBOL:
     case WIND_BEAUFORT:
     case WIND_DIRECTION:
+    case AQI:
+    case AQHI:
         return "";
     }
     return "";
@@ -639,6 +672,12 @@ calculate_symbol(xml_time *timeslice,
         return;
 
     loc = timeslice->location;
+
+    /* EC-sourced timeslices use "EC:NN" symbol strings; the icon code and
+       symbol_id already reflect the authoritative EC condition, so skip
+       cloudiness/fog overrides and leave the symbol string intact. */
+    if (loc->symbol && g_str_has_prefix(loc->symbol, "EC:"))
+        return;
 
     precipitation = string_to_double(loc->precipitation_value, 0);
     if (precipitation > 0)
@@ -789,12 +828,24 @@ make_combined_timeslice(xml_weather *wd,
     INTERPOLATE_OR_COPY(temperature_value, FALSE);
     COMB_END_COPY(temperature_unit);
 
+    COMB_END_COPY(condition);
+    COMB_END_COPY(windchill_value);
+    COMB_END_COPY(humidex_value);
+
     INTERPOLATE_OR_COPY(wind_dir_deg, TRUE);
-    comb->location->wind_dir_name =
-        g_strdup(wind_dir_name_by_deg(comb->location->wind_dir_deg, FALSE));
+    {
+        const gchar *derived =
+            wind_dir_name_by_deg(comb->location->wind_dir_deg, FALSE);
+        if (derived && *derived)
+            comb->location->wind_dir_name = g_strdup(derived);
+        else
+            comb->location->wind_dir_name =
+                g_strdup(end->location->wind_dir_name);
+    }
 
     INTERPOLATE_OR_COPY(wind_speed_mps, FALSE);
     INTERPOLATE_OR_COPY(wind_speed_beaufort, FALSE);
+    INTERPOLATE_OR_COPY(wind_gust_mps, FALSE);
     INTERPOLATE_OR_COPY(humidity_value, FALSE);
     COMB_END_COPY(humidity_unit);
 
@@ -814,6 +865,36 @@ make_combined_timeslice(xml_weather *wd,
 
     comb->location->symbol_id = interval->location->symbol_id;
     comb->location->symbol = g_strdup(interval->location->symbol);
+
+    /* When the selected interval is the EC observation interval (wider than
+       1 hour), its icon may be stale. Override with the nearest hourly
+       forecast interval's icon instead. */
+    if (current_conditions && between_t &&
+        difftime(interval->end, interval->start) > 3600) {
+        time_t t = *between_t;
+        time_t hour_start = (t / 3600) * 3600;
+        xml_time *fc = NULL;
+        gint h;
+        for (h = 0; h < 4 && fc == NULL; h++) {
+            fc = get_timeslice(wd, hour_start + h * 3600,
+                               hour_start + (h + 1) * 3600, NULL);
+        }
+        if (fc && fc->location->symbol &&
+            g_str_has_prefix(fc->location->symbol, "EC:")) {
+            g_free(comb->location->symbol);
+            comb->location->symbol = g_strdup(fc->location->symbol);
+            comb->location->symbol_id = fc->location->symbol_id;
+        }
+    }
+
+    /* Ensure observation condition text is available when the forecast
+       interval's end point has no condition (forecast points don't carry
+       condition text, only observation points do). */
+    if (current_conditions && !comb->location->condition &&
+        wd->obs_condition && wd->obs_condition[0] &&
+        difftime(time(NULL), wd->obs_time) < 4 * 3600) {
+        comb->location->condition = g_strdup(wd->obs_condition);
+    }
 
     calculate_symbol(comb, current_conditions);
     return comb;
@@ -1053,7 +1134,12 @@ find_smallest_interval(xml_weather *wd,
     if (before->len == 0)
         return NULL;
 
-    for (i = before->len - 1; i > 0; i--) {
+    /* Iterate from the most recent before-point down to index 0.
+     * Use the "i-- > 0 after decrement" pattern to safely handle
+     * guint underflow when before->len == 1 (single observed point,
+     * as is typical for Environment Canada data). */
+    i = before->len;
+    while (i-- > 0) {
         ts_before = g_array_index(before, xml_time *, i);
         for (j = 0; j < after->len; j++) {
             ts_after = g_array_index(after, xml_time *, j);
@@ -1161,7 +1247,7 @@ make_current_conditions(xml_weather *wd,
        interval, so look max three hours ahead */
     while (i < 3 && interval == NULL) {
         point_t = time_calc_hour(point_tm, i);
-        found = find_point_data(wd, point_t, 1, 4 * 3600);
+        found = find_point_data(wd, point_t, 0, 4 * 3600);
         interval = find_smallest_interval(wd, found);
         point_data_results_free(found);
 

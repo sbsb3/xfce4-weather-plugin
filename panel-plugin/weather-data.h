@@ -31,6 +31,7 @@ typedef enum {
     WIND_BEAUFORT,
     WIND_DIRECTION,
     WIND_DIRECTION_DEG,
+    WIND_GUST,
     HUMIDITY,
     DEWPOINT,
     APPARENT_TEMPERATURE,
@@ -40,7 +41,9 @@ typedef enum {
     CLOUDINESS,
     FOG,
     PRECIPITATION,
-    SYMBOL
+    SYMBOL,
+    AQI,
+    AQHI
 } data_types;
 
 typedef enum {

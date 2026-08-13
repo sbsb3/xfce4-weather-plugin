@@ -24,6 +24,7 @@
 #include "weather-summary.h"
 #include "weather-translate.h"
 #include "weather-icon.h"
+#include "weather-ec.h"
 
 static gboolean
 lnk_clicked(GtkTextTag *tag,
@@ -577,6 +578,16 @@ create_summary_tab(plugin_data *data)
     g_free(wind);
     APPEND_TEXT_ITEM_REAL(value);
 
+    /* wind gust */
+    rawvalue = get_data(conditions, data->units, WIND_GUST,
+                        FALSE, data->night_time);
+    if (rawvalue && *rawvalue) {
+        value = g_strdup_printf(_("\tGusts: %s %s\n"),
+                                rawvalue, get_unit(data->units, WIND_GUST));
+        APPEND_TEXT_ITEM_REAL(value);
+    }
+    g_free(rawvalue);
+
     /* precipitation */
     APPEND_BTEXT(_("\nPrecipitation\n"));
     APPEND_TEXT_ITEM(_("Precipitation amount"), PRECIPITATION);
@@ -585,6 +596,48 @@ create_summary_tab(plugin_data *data)
     APPEND_BTEXT(_("\nAtmosphere\n"));
     APPEND_TEXT_ITEM(_("Barometric pressure"), PRESSURE);
     APPEND_TEXT_ITEM(_("Relative humidity"), HUMIDITY);
+
+    /* EC alerts */
+    if (data->ec_alerts && data->ec_alerts->len > 0) {
+        guint ai;
+        APPEND_BTEXT(_("\nWeather Alerts\n"));
+        for (ai = 0; ai < data->ec_alerts->len; ai++) {
+            ec_alert *alert = g_ptr_array_index(data->ec_alerts, ai);
+            gchar *alert_line;
+            if (alert->description)
+                alert_line = g_strdup_printf("\t%s\n", alert->description);
+            else if (alert->type)
+                alert_line = g_strdup_printf("\t%s\n", alert->type);
+            else
+                continue;
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(buffer), &iter,
+                                   alert_line, -1);
+            g_free(alert_line);
+        }
+    }
+
+    /* AQI / AQHI */
+    if (data->aqi_value >= 0 || data->aqhi_value >= 0.0) {
+        APPEND_BTEXT(_("\nAir Quality\n"));
+        if (data->aqi_value >= 0) {
+            gchar *station_part = data->aqi_station ?
+                g_strdup_printf(" \xe2\x80\x93 %s", data->aqi_station) :
+                g_strdup("");
+            gchar *aqi_line = g_strdup_printf(
+                _("\tAQI (WAQI): %d%s\n"), data->aqi_value, station_part);
+            g_free(station_part);
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(buffer), &iter,
+                                   aqi_line, -1);
+            g_free(aqi_line);
+        }
+        if (data->aqhi_value >= 0.0) {
+            gchar *aqhi_line = g_strdup_printf(
+                _("\tAQHI (Environment Canada): %.0f\n"), data->aqhi_value);
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(buffer), &iter,
+                                   aqhi_line, -1);
+            g_free(aqhi_line);
+        }
+    }
 
     /* clouds */
     APPEND_BTEXT(_("\nClouds\n"));
@@ -913,7 +966,10 @@ add_forecast_cell(plugin_data *data,
     rawvalue = get_data(fcdata, data->units, SYMBOL,
                         FALSE, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
-    icon = get_icon(data->icon_theme, rawvalue, 48, scale_factor, (time_of_day == NIGHT));
+    /* Always use native EC icons */
+    icon = ec_get_icon(
+        (rawvalue && g_str_has_prefix(rawvalue, "EC:")) ? atoi(rawvalue + 3) : -1,
+        48, scale_factor);
     g_free(rawvalue);
     image = gtk_image_new_from_surface(icon);
     gtk_box_pack_start(GTK_BOX(box), GTK_WIDGET(image), TRUE, TRUE, 0);
@@ -1236,7 +1292,9 @@ create_summary_window(plugin_data *data)
     symbol = get_data(conditions, data->units, SYMBOL,
                       FALSE, data->night_time);
     scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(data->plugin));
-    icon = get_icon(data->icon_theme, symbol, 48, scale_factor, data->night_time);
+    icon = ec_get_icon(
+        (symbol && g_str_has_prefix(symbol, "EC:")) ? atoi(symbol + 3) : -1,
+        48, scale_factor);
     gtk_image_set_from_surface(GTK_IMAGE(image), icon);
     g_free(symbol);
 
@@ -1251,7 +1309,7 @@ create_summary_window(plugin_data *data)
         gtk_widget_set_valign (box, GTK_ALIGN_CENTER);
 
         gtk_widget_destroy (image);
-        icon = get_icon (data->icon_theme, NULL, 128, scale_factor, data->night_time);
+        icon = ec_get_icon(-1, 128, scale_factor);
         image = gtk_image_new ();
         gtk_image_set_from_surface (GTK_IMAGE (image), icon);
         if (G_LIKELY (icon))

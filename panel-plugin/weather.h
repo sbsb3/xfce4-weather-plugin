@@ -62,6 +62,12 @@
 #define SETTING_SB_COLOR      "/scrollbox/color"
 #define SETTING_SB_USE_COLOR  "/scrollbox/use-color"
 #define SETTING_LABELS        "/labels"
+#define SETTING_DATA_SOURCE  "/data-source"
+#define SETTING_EC_PROVINCE  "/ec/province"
+#define SETTING_EC_STATION   "/ec/station"
+#define SETTING_WAQI_KEY     "/waqi-key"
+#define SETTING_AQHI_ZONE    "/aqhi/zone"
+#define SETTING_AQHI_REGION  "/aqhi/region"
 
 G_BEGIN_DECLS
 
@@ -119,6 +125,17 @@ typedef struct {
     gboolean upower_lid_closed;
 #endif
     gboolean power_saving;
+    gchar           *ec_province;
+    gchar           *ec_station_id;
+    GPtrArray       *ec_alerts;      /* GPtrArray of ec_alert* */
+    gchar           *waqi_api_key;
+    gint             aqi_value;      /* -1 = unknown */
+    gchar           *aqi_station;
+    gchar           *aqhi_zone_id;
+    gchar           *aqhi_region_id;
+    gdouble          aqhi_value;     /* -1 = unknown */
+    update_info     *waqi_update;
+    update_info     *aqhi_update;
     SoupSession *session;
     gchar *geonames_username;
 

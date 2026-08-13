@@ -310,6 +310,7 @@ make_weather_data(void)
         g_slice_free(xml_weather, wd);
         return NULL;
     }
+    wd->obs_icon_code = -1;
     return wd;
 }
 
@@ -855,10 +856,14 @@ xml_location_free(xml_location *loc)
     g_free(loc->longitude);
     g_free(loc->temperature_value);
     g_free(loc->temperature_unit);
+    g_free(loc->condition);
+    g_free(loc->windchill_value);
+    g_free(loc->humidex_value);
     g_free(loc->wind_dir_deg);
     g_free(loc->wind_dir_name);
     g_free(loc->wind_speed_mps);
     g_free(loc->wind_speed_beaufort);
+    g_free(loc->wind_gust_mps);
     g_free(loc->humidity_value);
     g_free(loc->humidity_unit);
     g_free(loc->pressure_value);
@@ -941,11 +946,15 @@ xml_time_copy(const xml_time *src)
 
     loc->temperature_value = g_strdup(src->location->temperature_value);
     loc->temperature_unit = g_strdup(src->location->temperature_unit);
+    loc->condition = g_strdup(src->location->condition);
+    loc->windchill_value = g_strdup(src->location->windchill_value);
+    loc->humidex_value = g_strdup(src->location->humidex_value);
 
     loc->wind_dir_deg = g_strdup(src->location->wind_dir_deg);
     loc->wind_dir_name = g_strdup(src->location->wind_dir_name);
     loc->wind_speed_mps = g_strdup(src->location->wind_speed_mps);
     loc->wind_speed_beaufort = g_strdup(src->location->wind_speed_beaufort);
+    loc->wind_gust_mps = g_strdup(src->location->wind_gust_mps);
 
     loc->humidity_value = g_strdup(src->location->humidity_value);
     loc->humidity_unit = g_strdup(src->location->humidity_unit);
@@ -1003,6 +1012,7 @@ xml_weather_free(xml_weather *wd)
         weather_debug("Freeing current conditions.");
         xml_time_free(wd->current_conditions);
     }
+    g_free(wd->obs_condition);
     g_slice_free(xml_weather, wd);
 }
 
