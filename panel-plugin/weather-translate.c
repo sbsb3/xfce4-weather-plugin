@@ -23,6 +23,7 @@
 #include "weather-data.h"
 #include "weather.h"
 #include "weather-translate.h"
+#include "weather-ec.h"
 
 #define DAY_LOC_N (sizeof(gchar) * 100)
 #define NODATA "NODATA"
@@ -201,6 +202,14 @@ translate_desc(const gchar *desc,
                const gboolean nighttime)
 {
     guint i;
+
+    if (G_UNLIKELY(desc == NULL))
+        return NODATA;
+
+    /* Environment Canada symbols are of the form "EC:NN" and carry the EC
+       icon code, which already distinguishes day and night conditions. */
+    if (g_str_has_prefix(desc, "EC:"))
+        return ec_desc_for_code((gint) g_ascii_strtoll(desc + 3, NULL, 10));
 
     for (i = 0; i < NUM_SYMBOLS; i++) {
         if (strcmp(desc, symbol_to_desc[i].symbol) == 0) {

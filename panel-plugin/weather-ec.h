@@ -73,6 +73,9 @@ ec_aqhi_region *ec_find_nearest_aqhi_region (const gchar *xml_data, gsize len,
 void       ec_aqhi_region_free         (ec_aqhi_region *region);
 gdouble    ec_parse_aqhi_observation   (const gchar *xml_data, gsize len);
 
+/* Return the translated condition description for an EC icon code. */
+const gchar *ec_desc_for_code           (gint icon_code);
+
 /* Load an EC icon by code from the installed ec-icons directory.
  * Returns a cairo_surface_t* or NULL. Caller owns the surface. */
 cairo_surface_t *ec_get_icon          (gint icon_code, gint size, gint scale);

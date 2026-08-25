@@ -25,6 +25,7 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
+#include <libxfce4util/libxfce4util.h>
 
 #include "weather-parsers.h"
 #include "weather-data.h"
@@ -33,64 +34,92 @@
 #include "weather-ec.h"
 
 
+/*
+ * Environment Canada icon codes: the condition each one stands for and the
+ * closest matching plugin symbol. Descriptions are taken from the official
+ * code tables published alongside the citypage weather data at
+ * https://dd.weather.gc.ca/citypage_weather/docs/, namely
+ * current_conditions_icon_code_descriptions_e.csv and
+ * forecast_conditions_icon_code_descriptions_e.csv. Where the two disagree
+ * (EC words the same code differently for observations and forecasts) the
+ * shorter, more general wording is used. EC codes already come in separate
+ * day and night variants, so no night descriptions are needed.
+ */
+typedef struct {
+    gint   symbol_id;
+    gchar *desc;
+} ec_condition;
+
+static const ec_condition ec_conditions[] = {
+    /* 0  */ { SYMBOL_SUN,                 N_("Sunny")                        },
+    /* 1  */ { SYMBOL_LIGHTCLOUD,          N_("Mainly sunny")                 },
+    /* 2  */ { SYMBOL_PARTLYCLOUD,         N_("Partly cloudy")                },
+    /* 3  */ { SYMBOL_PARTLYCLOUD,         N_("Mostly cloudy")                },
+    /* 4  */ { SYMBOL_PARTLYCLOUD,         N_("Increasing cloudiness")        },
+    /* 5  */ { SYMBOL_LIGHTCLOUD,          N_("Clearing")                     },
+    /* 6  */ { SYMBOL_LIGHTRAINSUN,        N_("Light rain showers")           },
+    /* 7  */ { SYMBOL_SLEETSUN,            N_("Light rain showers and flurries") },
+    /* 8  */ { SYMBOL_SNOWSUN,             N_("Light flurries")               },
+    /* 9  */ { SYMBOL_LIGHTRAINTHUNDERSUN, N_("Chance of thunder showers")    },
+    /* 10 */ { SYMBOL_CLOUD,               N_("Cloudy")                       },
+    /* 11 */ { SYMBOL_LIGHTRAIN,           N_("Precipitation")                },
+    /* 12 */ { SYMBOL_LIGHTRAIN,           N_("Rain showers")                 },
+    /* 13 */ { SYMBOL_RAIN,                N_("Rain")                         },
+    /* 14 */ { SYMBOL_SLEET,               N_("Freezing rain")                },
+    /* 15 */ { SYMBOL_SLEET,               N_("Rain and snow")                },
+    /* 16 */ { SYMBOL_SNOW,                N_("Light snow")                   },
+    /* 17 */ { SYMBOL_SNOW,                N_("Snow")                         },
+    /* 18 */ { SYMBOL_SNOW,                N_("Heavy snow")                   },
+    /* 19 */ { SYMBOL_RAINTHUNDER,         N_("Thunderstorm")                 },
+    /* 20 */ { SYMBOL_FOG,                 N_("Fog")                          },
+    /* 21 */ { SYMBOL_FOG,                 N_("Fog")                          },
+    /* 22 */ { SYMBOL_PARTLYCLOUD,         N_("A mix of sun and cloud")       },
+    /* 23 */ { SYMBOL_FOG,                 N_("Haze")                         },
+    /* 24 */ { SYMBOL_FOG,                 N_("Fog")                          },
+    /* 25 */ { SYMBOL_SNOW,                N_("Drifting snow")                },
+    /* 26 */ { SYMBOL_SNOW,                N_("Ice crystals")                 },
+    /* 27 */ { SYMBOL_SLEET,               N_("Ice pellets")                  },
+    /* 28 */ { SYMBOL_LIGHTRAIN,           N_("Drizzle")                      },
+    /* 29 */ { SYMBOL_NODATA,              N_("Not available")                },
+    /* 30 */ { SYMBOL_SUN,                 N_("Clear")                        },
+    /* 31 */ { SYMBOL_LIGHTCLOUD,          N_("Mainly clear")                 },
+    /* 32 */ { SYMBOL_PARTLYCLOUD,         N_("Partly cloudy")                },
+    /* 33 */ { SYMBOL_PARTLYCLOUD,         N_("Mostly cloudy")                },
+    /* 34 */ { SYMBOL_PARTLYCLOUD,         N_("Increasing cloudiness")        },
+    /* 35 */ { SYMBOL_LIGHTCLOUD,          N_("Clearing")                     },
+    /* 36 */ { SYMBOL_LIGHTRAINSUN,        N_("Light rain showers")           },
+    /* 37 */ { SYMBOL_SLEETSUN,            N_("Light rain showers and flurries") },
+    /* 38 */ { SYMBOL_SNOWSUN,             N_("Light flurries")               },
+    /* 39 */ { SYMBOL_LIGHTRAINTHUNDERSUN, N_("Thunderstorm")                 },
+    /* 40 */ { SYMBOL_SNOW,                N_("Blowing snow")                 },
+    /* 41 */ { SYMBOL_CLOUD,               N_("Funnel cloud")                 },
+    /* 42 */ { SYMBOL_CLOUD,               N_("Tornado")                      },
+    /* 43 */ { SYMBOL_CLOUD,               N_("Windy")                        },
+    /* 44 */ { SYMBOL_FOG,                 N_("Smoke")                        },
+    /* 45 */ { SYMBOL_FOG,                 N_("Blowing dust")                 },
+    /* 46 */ { SYMBOL_RAINTHUNDER,         N_("Thunderstorm with hail")       },
+    /* 47 */ { SYMBOL_RAINTHUNDER,         N_("Thunderstorm with dust storm") },
+    /* 48 */ { SYMBOL_CLOUD,               N_("Waterspout")                   },
+};
+
+
 /* Convert EC icon code (0-based integer) to symbol_id */
 static gint
 ec_icon_to_symbol_id(gint code)
 {
-    static const gint map[] = {
-        /* 0  */ SYMBOL_SUN,              /* Sunny */
-        /* 1  */ SYMBOL_LIGHTCLOUD,       /* A few clouds */
-        /* 2  */ SYMBOL_PARTLYCLOUD,      /* Partly cloudy */
-        /* 3  */ SYMBOL_PARTLYCLOUD,      /* Mainly cloudy */
-        /* 4  */ SYMBOL_CLOUD,            /* Overcast */
-        /* 5  */ SYMBOL_LIGHTRAINSUN,     /* Chance of showers */
-        /* 6  */ SYMBOL_SNOWSUN,          /* Chance of flurries */
-        /* 7  */ SYMBOL_LIGHTRAINSUN,     /* Chance of rain */
-        /* 8  */ SYMBOL_LIGHTRAINSUN,     /* Chance of drizzle */
-        /* 9  */ SYMBOL_SLEET,            /* Chance of freezing drizzle */
-        /* 10 */ SYMBOL_SLEET,            /* Chance of freezing rain */
-        /* 11 */ SYMBOL_SLEET,            /* Chance of mixed rain and snow */
-        /* 12 */ SYMBOL_LIGHTRAINTHUNDERSUN, /* Chance of thunderstorms */
-        /* 13 */ SYMBOL_SLEET,            /* Chance of wintry mix */
-        /* 14 */ SYMBOL_LIGHTRAIN,        /* Drizzle */
-        /* 15 */ SYMBOL_SLEET,            /* Freezing drizzle */
-        /* 16 */ SYMBOL_SLEET,            /* Freezing rain */
-        /* 17 */ SYMBOL_SLEET,            /* Rain and snow / wintry mix */
-        /* 18 */ SYMBOL_LIGHTRAIN,        /* Rain shower */
-        /* 19 */ SYMBOL_RAIN,             /* Rain */
-        /* 20 */ SYMBOL_RAIN,             /* Heavy rain */
-        /* 21 */ SYMBOL_RAIN,             /* Periods of rain */
-        /* 22 */ SYMBOL_RAINTHUNDER,      /* Thunderstorm */
-        /* 23 */ SYMBOL_SNOW,             /* Snow */
-        /* 24 */ SYMBOL_SNOW,             /* Snow */
-        /* 25 */ SYMBOL_SNOW,             /* Periods of snow / blowing snow */
-        /* 26 */ SYMBOL_SNOW,             /* Heavy snow */
-        /* 27 */ SYMBOL_SNOW,             /* Blizzard */
-        /* 28 */ SYMBOL_FOG,              /* Fog */
-        /* 29 */ SYMBOL_FOG,              /* Fog / Haze */
-        /* 30 */ SYMBOL_SUN,              /* Clear (night) */
-        /* 31 */ SYMBOL_LIGHTCLOUD,       /* A few clouds (night) */
-        /* 32 */ SYMBOL_PARTLYCLOUD,      /* Partly cloudy (night) */
-        /* 33 */ SYMBOL_CLOUD,            /* Mainly cloudy (night) */
-        /* 34 */ SYMBOL_LIGHTRAINSUN,     /* Chance of showers (night) */
-        /* 35 */ SYMBOL_SNOWSUN,          /* Chance of flurries (night) */
-        /* 36 */ SYMBOL_LIGHTRAIN,        /* Chance of rain (night) */
-        /* 37 */ SYMBOL_LIGHTRAIN,        /* Chance of drizzle (night) */
-        /* 38 */ SYMBOL_SLEET,            /* Chance of freezing drizzle (night) */
-        /* 39 */ SYMBOL_SLEET,            /* Chance of freezing rain (night) */
-        /* 40 */ SYMBOL_SLEET,            /* Chance of mixed rain and snow (night) */
-        /* 41 */ SYMBOL_SNOW,             /* Snow / flurries (night) */
-        /* 42 */ SYMBOL_SNOW,             /* Blowing snow (night) */
-        /* 43 */ SYMBOL_SLEET,            /* Ice pellets (night) */
-        /* 44 */ SYMBOL_FOG,              /* Fog (night) */
-        /* 45 */ SYMBOL_FOG,              /* Haze (night) */
-        /* 46 */ SYMBOL_SLEET,            /* Ice pellets / freezing rain (night) */
-        /* 47 */ SYMBOL_LIGHTRAIN,        /* Light rain (night) */
-        /* 48 */ SYMBOL_SLEET,            /* Wintry mix (night) */
-    };
-    if (code < 0 || code >= (gint) G_N_ELEMENTS(map))
+    if (code < 0 || code >= (gint) G_N_ELEMENTS(ec_conditions))
         return SYMBOL_NODATA;
-    return map[code];
+    return ec_conditions[code].symbol_id;
+}
+
+
+/* Return the translated condition an EC icon code stands for */
+const gchar *
+ec_desc_for_code(gint code)
+{
+    if (code < 0 || code >= (gint) G_N_ELEMENTS(ec_conditions))
+        return _("Not available");
+    return _(ec_conditions[code].desc);
 }
 
 

@@ -10,6 +10,8 @@ panel-plugin/weather-config.c
 panel-plugin/weather-config.h
 panel-plugin/weather-data.c
 panel-plugin/weather-data.h
+panel-plugin/weather-ec.c
+panel-plugin/weather-ec.h
 panel-plugin/weather-icon.c
 panel-plugin/weather-icon.h
 panel-plugin/weather-parsers.c
