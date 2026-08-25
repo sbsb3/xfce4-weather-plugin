@@ -866,33 +866,14 @@ make_combined_timeslice(xml_weather *wd,
     comb->location->symbol_id = interval->location->symbol_id;
     comb->location->symbol = g_strdup(interval->location->symbol);
 
-    /* When the selected interval is the EC observation interval (wider than
-       1 hour), its icon may be stale. Override with the nearest hourly
-       forecast interval's icon instead. */
-    if (current_conditions && between_t &&
-        difftime(interval->end, interval->start) > 3600) {
-        time_t t = *between_t;
-        time_t hour_start = (t / 3600) * 3600;
-        xml_time *fc = NULL;
-        gint h;
-        for (h = 0; h < 4 && fc == NULL; h++) {
-            fc = get_timeslice(wd, hour_start + h * 3600,
-                               hour_start + (h + 1) * 3600, NULL);
-        }
-        if (fc && fc->location->symbol &&
-            g_str_has_prefix(fc->location->symbol, "EC:")) {
-            g_free(comb->location->symbol);
-            comb->location->symbol = g_strdup(fc->location->symbol);
-            comb->location->symbol_id = fc->location->symbol_id;
-        }
-    }
-
-    /* Ensure observation condition text is available when the forecast
-       interval's end point has no condition (forecast points don't carry
-       condition text, only observation points do). */
+    /* Ensure the observed condition text is available when the interval's
+       end point has no condition of its own (forecast points don't carry
+       condition text, only observation points do). Only do this for the
+       observation interval, so that the text can never contradict the
+       forecast the rest of the timeslice was built from. */
     if (current_conditions && !comb->location->condition &&
         wd->obs_condition && wd->obs_condition[0] &&
-        difftime(time(NULL), wd->obs_time) < 4 * 3600) {
+        difftime(interval->start, wd->obs_time) == 0) {
         comb->location->condition = g_strdup(wd->obs_condition);
     }
 
@@ -1229,6 +1210,29 @@ find_point_data(const xml_weather *wd,
 }
 
 
+/*
+ * Find the interval timeslice that begins at start_t, i.e. the
+ * Environment Canada observation interval starting at obs_time.
+ */
+static xml_time *
+find_interval_starting_at(const xml_weather *wd,
+                          const time_t start_t)
+{
+    xml_time *timeslice, *found = NULL;
+    guint i;
+
+    for (i = 0; i < wd->timeslices->len; i++) {
+        timeslice = g_array_index(wd->timeslices, xml_time *, i);
+        if (timeslice && difftime(timeslice->start, start_t) == 0 &&
+            difftime(timeslice->end, timeslice->start) > 0)
+            /* prefer the widest interval, that is the observation one */
+            if (found == NULL || difftime(timeslice->end, found->end) > 0)
+                found = timeslice;
+    }
+    return found;
+}
+
+
 xml_time *
 make_current_conditions(xml_weather *wd,
                         time_t now_t)
@@ -1242,6 +1246,24 @@ make_current_conditions(xml_weather *wd,
     g_assert(wd != NULL);
     if (G_UNLIKELY(wd == NULL))
         return NULL;
+
+    /* Environment Canada delivers actual observations, and those - not the
+       coming hour's forecast - are what current conditions means. Use the
+       observation interval as long as now_t still falls inside it; only
+       once the observation has been outrun by time do we fall back to the
+       forecast data below. */
+    if (wd->obs_time > 0) {
+        interval = find_interval_starting_at(wd, wd->obs_time);
+        if (interval &&
+            difftime(now_t, interval->start) >= 0 &&
+            difftime(interval->end, now_t) >= 0) {
+            weather_debug("Using EC observation interval for current "
+                          "conditions.");
+            weather_dump(weather_dump_timeslice, interval);
+            return make_combined_timeslice(wd, interval, &now_t, TRUE);
+        }
+        interval = NULL;
+    }
 
     /* there may not be a timeslice available for the current
        interval, so look max three hours ahead */
