@@ -143,6 +143,27 @@ mps_to_beaufort(gdouble mps)
 }
 
 
+/*
+ * Read an integer element, returning def when the element is empty.
+ * Shortly after every full hour Environment Canada publishes an
+ * intermediate citypage file whose <condition> and <iconCode> are still
+ * empty; atoi() would silently turn those into 0, that is "Sunny".
+ */
+static gint
+ec_node_int(xmlNode *node, gint def)
+{
+    xmlChar *content = xmlNodeGetContent(node);
+    gint value = def;
+
+    if (content) {
+        if (content[0] != '\0')
+            value = atoi((const gchar *) content);
+        xmlFree(content);
+    }
+    return value;
+}
+
+
 /* Parse EC timestamp "YYYYMMDDHHmmss" (14-char) or "YYYYMMDDHHMM" (12-char) as UTC */
 static time_t
 ec_parse_timestamp(const gchar *ts)
@@ -324,16 +345,26 @@ ec_find_xml_url_in_dirlist(const gchar *html, const gchar *dir_url,
     if (!regex)
         return NULL;
 
+    /* Environment Canada publishes several files per station and hour, named
+       after their publication time. The first one of an hour carries the new
+       observation time but still has an empty <condition> and <iconCode>,
+       which would read as "Sunny"; the complete file follows a minute or so
+       later. Directory listings are sorted by name, that is chronologically,
+       so keep matching to the end and use the most recent file. */
     if (g_regex_match(regex, html, 0, &match_info)) {
-        gchar *filename = g_match_info_fetch(match_info, 1);
-        if (filename) {
-            /* filename may be relative or absolute */
-            if (g_str_has_prefix(filename, "http")) {
-                result = filename;
-            } else {
-                result = g_strconcat(dir_url, filename, NULL);
-                g_free(filename);
+        while (g_match_info_matches(match_info)) {
+            gchar *filename = g_match_info_fetch(match_info, 1);
+            if (filename) {
+                g_free(result);
+                /* filename may be relative or absolute */
+                if (g_str_has_prefix(filename, "http")) {
+                    result = filename;
+                } else {
+                    result = g_strconcat(dir_url, filename, NULL);
+                    g_free(filename);
+                }
             }
+            g_match_info_next(match_info, NULL);
         }
     }
 
@@ -493,16 +524,14 @@ ec_parse_weather(const gchar *data, gsize len, xml_weather *wd,
                     }
                 }
             } else if (xmlStrcmp(child->name, (const xmlChar *) "iconCode") == 0) {
-                content = xmlNodeGetContent(child);
-                if (content) {
-                    icon_code = atoi((const gchar *) content);
-                    xmlFree(content);
-                }
+                icon_code = ec_node_int(child, icon_code);
             } else if (xmlStrcmp(child->name, (const xmlChar *) "condition") == 0) {
                 content = xmlNodeGetContent(child);
                 if (content) {
-                    g_free(condition_str);
-                    condition_str = g_strdup((const gchar *) content);
+                    if (content[0] != '\0') {
+                        g_free(condition_str);
+                        condition_str = g_strdup((const gchar *) content);
+                    }
                     xmlFree(content);
                 }
             } else if (xmlStrcmp(child->name, (const xmlChar *) "windChill") == 0) {
@@ -818,17 +847,9 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                         xmlFree(content);
                     }
                 } else if (xmlStrcmp(child->name, (const xmlChar *) "iconCode") == 0) {
-                    content = xmlNodeGetContent(child);
-                    if (content) {
-                        h_icon = atoi((const gchar *) content);
-                        xmlFree(content);
-                    }
+                    h_icon = ec_node_int(child, h_icon);
                 } else if (xmlStrcmp(child->name, (const xmlChar *) "lop") == 0) {
-                    content = xmlNodeGetContent(child);
-                    if (content) {
-                        h_pop = atoi((const gchar *) content);
-                        xmlFree(content);
-                    }
+                    h_pop = ec_node_int(child, h_pop);
                 } else if (xmlStrcmp(child->name, (const xmlChar *) "wind") == 0) {
                     for (wn = child->children; wn; wn = wn->next) {
                         if (wn->type != XML_ELEMENT_NODE)
@@ -1016,11 +1037,7 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                             continue;
                         if (xmlStrcmp(an->name,
                                       (const xmlChar *) "iconCode") == 0) {
-                            content = xmlNodeGetContent(an);
-                            if (content) {
-                                fc_icon = atoi((const gchar *) content);
-                                xmlFree(content);
-                            }
+                            fc_icon = ec_node_int(an, fc_icon);
                         }
                     }
                 }
