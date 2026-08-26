@@ -565,7 +565,7 @@ cb_ec_weather_xml(SoupSession *session,
                   gpointer user_data)
 {
     plugin_data *pdata = (plugin_data *) user_data;
-    time_t now_t;
+    time_t now_t, ec_obs_time = 0;
     gboolean parsing_error = TRUE;
     const gchar *body = NULL;
     gsize len = 0;
@@ -598,7 +598,6 @@ cb_ec_weather_xml(SoupSession *session,
         xml_weather_free(pdata->weatherdata);
         pdata->weatherdata = make_weather_data();
 
-        time_t ec_obs_time = 0;
         if (ec_parse_weather(body, len, pdata->weatherdata, &ec_obs_time)) {
             pdata->weather_update->attempt = 0;
             pdata->weather_update->last = now_t;
@@ -630,10 +629,24 @@ cb_ec_weather_xml(SoupSession *session,
 #endif
     }
 
-    if (parsing_error)
+    /* Environment Canada publishes a new observation a few minutes after
+       every full hour. Scheduling the next download an hour after this one
+       would keep whatever offset we happen to have, leaving the panel up to
+       an hour behind weather.gc.ca, so aim for shortly after the next
+       observation is due instead. If this download did not even bring the
+       observation for the current hour, or brought one whose condition was
+       still empty, it has not been published in full yet and we retry
+       soon. */
+    if (parsing_error || difftime(now_t, ec_obs_time) >= 3600 ||
+        pdata->weatherdata->obs_icon_code < 0)
         pdata->weather_update->next = now_t + 10 * 60;
-    else
-        pdata->weather_update->next = now_t + 60 * 60;
+    else {
+        struct tm next_tm = *localtime(&now_t);
+
+        next_tm.tm_min = 5;
+        next_tm.tm_sec = 0;
+        pdata->weather_update->next = time_calc_hour(next_tm, 1);
+    }
 
     xml_weather_clean(pdata->weatherdata);
     g_array_sort(pdata->weatherdata->timeslices,
