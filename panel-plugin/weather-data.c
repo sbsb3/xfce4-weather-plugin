@@ -1211,6 +1211,89 @@ find_point_data(const xml_weather *wd,
 
 
 /*
+ * Find the interval nearest to now_t that actually carries a symbol,
+ * preferring the shortest one that covers now_t and otherwise the next one
+ * to start. Used only when the observation itself has no condition, where
+ * the coming hour's forecast is a far better guess at the sky than no icon
+ * at all.
+ */
+static xml_time *
+find_nearest_symbol_interval(const xml_weather *wd,
+                             const time_t now_t)
+{
+    xml_time *timeslice, *found = NULL;
+    guint i;
+
+    for (i = 0; i < wd->timeslices->len; i++) {
+        timeslice = g_array_index(wd->timeslices, xml_time *, i);
+        if (timeslice == NULL ||
+            difftime(timeslice->end, timeslice->start) <= 0 ||
+            timeslice->location->symbol_id == SYMBOL_NODATA ||
+            difftime(timeslice->start, now_t) > 0)
+            continue;
+        if (difftime(timeslice->end, now_t) < 0)
+            continue;
+        if (found == NULL ||
+            difftime(timeslice->end, timeslice->start) <
+            difftime(found->end, found->start))
+            found = timeslice;
+    }
+    if (found)
+        return found;
+
+    /* nothing covers now_t, take the next interval to start */
+    for (i = 0; i < wd->timeslices->len; i++) {
+        timeslice = g_array_index(wd->timeslices, xml_time *, i);
+        if (timeslice == NULL ||
+            difftime(timeslice->end, timeslice->start) <= 0 ||
+            timeslice->location->symbol_id == SYMBOL_NODATA ||
+            difftime(timeslice->start, now_t) <= 0)
+            continue;
+        if (found == NULL ||
+            difftime(timeslice->start, found->start) < 0)
+            found = timeslice;
+    }
+    return found;
+}
+
+
+/*
+ * Find the interval the forecast data provides for now_t. There may not be
+ * a timeslice available for the current interval, so look max three hours
+ * ahead.
+ */
+static xml_time *
+find_forecast_interval(xml_weather *wd,
+                       const time_t now_t)
+{
+    point_data_results *found = NULL;
+    xml_time *interval = NULL, *incomplete;
+    struct tm point_tm = *localtime(&now_t);
+    time_t point_t;
+    gint i = 0;
+
+    while (i < 3 && interval == NULL) {
+        point_t = time_calc_hour(point_tm, i);
+        found = find_point_data(wd, point_t, 0, 4 * 3600);
+        interval = find_smallest_interval(wd, found);
+        point_data_results_free(found);
+
+        /* There may be interval data where point data is only
+           available at the end of that interval. If such an interval
+           exists, use it, it's still better than the next one where
+           now_t is not in between. */
+        if (interval && difftime(interval->start, now_t) > 0)
+            if ((incomplete =
+                 find_smallest_incomplete_interval(wd, interval->start)))
+                interval = incomplete;
+        point_tm = *localtime(&point_t);
+        i++;
+    }
+    return interval;
+}
+
+
+/*
  * Find the interval timeslice that begins at start_t, i.e. the
  * Environment Canada observation interval starting at obs_time.
  */
@@ -1237,11 +1320,7 @@ xml_time *
 make_current_conditions(xml_weather *wd,
                         time_t now_t)
 {
-    point_data_results *found = NULL;
-    xml_time *interval = NULL, *incomplete;
-    struct tm point_tm = *localtime(&now_t);
-    time_t point_t;
-    gint i = 0;
+    xml_time *interval = NULL;
 
     g_assert(wd != NULL);
     if (G_UNLIKELY(wd == NULL))
@@ -1257,33 +1336,36 @@ make_current_conditions(xml_weather *wd,
         if (interval &&
             difftime(now_t, interval->start) >= 0 &&
             difftime(interval->end, now_t) >= 0) {
+            xml_time *comb;
+
             weather_debug("Using EC observation interval for current "
                           "conditions.");
             weather_dump(weather_dump_timeslice, interval);
-            return make_combined_timeslice(wd, interval, &now_t, TRUE);
+            comb = make_combined_timeslice(wd, interval, &now_t, TRUE);
+
+            /* Environment Canada sometimes publishes the observation for an
+               hour before it has decided what to call it, leaving an empty
+               condition and icon code behind. The measurements are good, so
+               keep them and borrow the symbol from the forecast rather than
+               displaying no icon at all. */
+            if (comb && comb->location->symbol_id == SYMBOL_NODATA) {
+                xml_time *forecast = find_nearest_symbol_interval(wd, now_t);
+
+                if (forecast) {
+                    weather_debug("Observation has no condition, using the "
+                                  "forecast symbol instead.");
+                    comb->location->symbol_id = forecast->location->symbol_id;
+                    g_free(comb->location->symbol);
+                    comb->location->symbol =
+                        g_strdup(forecast->location->symbol);
+                }
+            }
+            if (comb)
+                return comb;
         }
-        interval = NULL;
     }
 
-    /* there may not be a timeslice available for the current
-       interval, so look max three hours ahead */
-    while (i < 3 && interval == NULL) {
-        point_t = time_calc_hour(point_tm, i);
-        found = find_point_data(wd, point_t, 0, 4 * 3600);
-        interval = find_smallest_interval(wd, found);
-        point_data_results_free(found);
-
-        /* There may be interval data where point data is only
-           available at the end of that interval. If such an interval
-           exists, use it, it's still better than the next one where
-           now_t is not in between. */
-        if (interval && difftime(interval->start, now_t) > 0)
-            if ((incomplete =
-                 find_smallest_incomplete_interval(wd, interval->start)))
-                interval = incomplete;
-        point_tm = *localtime(&point_t);
-        i++;
-    }
+    interval = find_forecast_interval(wd, now_t);
     weather_dump(weather_dump_timeslice, interval);
     if (interval == NULL)
         return NULL;

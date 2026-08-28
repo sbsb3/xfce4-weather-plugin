@@ -950,7 +950,9 @@ ec_parse_forecasts(const gchar *data, gsize len, xml_weather *wd,
                 loci = iv->location;
 
                 loci->symbol_id = sym_id;
-                loci->symbol    = g_strdup_printf("EC:%02d", h_icon);
+                loci->symbol    = (h_icon >= 0)
+                    ? g_strdup_printf("EC:%02d", h_icon)
+                    : g_strdup(get_symbol_name(sym_id));
                 if (h_pop > 0)
                     loci->precipitation_value = g_strdup_printf("%.1f",
                                                                  h_pop * 0.1);
