@@ -633,17 +633,22 @@ cb_ec_weather_xml(SoupSession *session,
        every full hour. Scheduling the next download an hour after this one
        would keep whatever offset we happen to have, leaving the panel up to
        an hour behind weather.gc.ca, so aim for shortly after the next
-       observation is due instead. If this download did not even bring the
-       observation for the current hour, or brought one whose condition was
-       still empty, it has not been published in full yet and we retry
-       soon. */
-    if (parsing_error || difftime(now_t, ec_obs_time) >= 3600 ||
-        pdata->weatherdata->obs_icon_code < 0)
+       observation is due instead. */
+    if (parsing_error)
         pdata->weather_update->next = now_t + 10 * 60;
+    else if (difftime(now_t, ec_obs_time) >= 3600 ||
+             pdata->weatherdata->obs_icon_code < 0)
+        /* The observation for this hour is missing, or EC has published it
+           without having decided yet what to call the conditions. Both are
+           resolved within a few minutes, so look again shortly. */
+        pdata->weather_update->next = now_t + 2 * 60;
     else {
         struct tm next_tm = *localtime(&now_t);
 
-        next_tm.tm_min = 5;
+        /* Late enough that the complete file for the hour is there: the
+           observation stub appears around hh:01 and has been seen to be
+           completed as late as hh:06. */
+        next_tm.tm_min = 8;
         next_tm.tm_sec = 0;
         pdata->weather_update->next = time_calc_hour(next_tm, 1);
     }
